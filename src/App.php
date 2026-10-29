@@ -377,23 +377,22 @@ class App implements \ArrayAccess
 
     // ========== ArrayAccess ==========
 
-    public function offsetExists($offset): bool
+    public function offsetExists(mixed $offset): bool
     {
         return isset(static::$container[$offset]);
     }
 
-    #[\ReturnTypeWillChange]
-    public function offsetGet($offset)
+    public function offsetGet(mixed $offset): mixed
     {
         return static::$container[$offset] ?? null;
     }
 
-    public function offsetSet($offset, $value): void
+    public function offsetSet(mixed $offset, mixed $value): void
     {
         static::$container[$offset] = $value;
     }
 
-    public function offsetUnset($offset): void
+    public function offsetUnset(mixed $offset): void
     {
         unset(static::$container[$offset]);
     }

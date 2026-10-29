@@ -44,7 +44,7 @@ class ZArray implements IteratorAggregate, ArrayAccess, Countable
 
     // ========== ArrayAccess ==========
 
-    public function offsetExists($offset): bool
+    public function offsetExists(mixed $offset): bool
     {
         if (is_null($offset)) {
             return false;
@@ -53,7 +53,7 @@ class ZArray implements IteratorAggregate, ArrayAccess, Countable
             return true;
         }
         $array = $this->elements;
-        foreach (explode('.', $offset) as $segment) {
+        foreach (explode('.', (string) $offset) as $segment) {
             if (!is_array($array) || !array_key_exists($segment, $array)) {
                 return false;
             }
@@ -62,8 +62,7 @@ class ZArray implements IteratorAggregate, ArrayAccess, Countable
         return true;
     }
 
-    #[\ReturnTypeWillChange]
-    public function &offsetGet($offset)
+    public function &offsetGet(mixed $offset): mixed
     {
         $notFound = null;
         if (is_null($offset)) {
@@ -73,7 +72,7 @@ class ZArray implements IteratorAggregate, ArrayAccess, Countable
             return $this->elements[$offset];
         }
         $array = &$this->elements;
-        $keys = explode('.', $offset);
+        $keys = explode('.', (string) $offset);
         foreach ($keys as $segment) {
             if (!is_array($array) || !array_key_exists($segment, $array)) {
                 return $notFound;
@@ -83,9 +82,9 @@ class ZArray implements IteratorAggregate, ArrayAccess, Countable
         return $array;
     }
 
-    public function offsetSet($offset, $value): void
+    public function offsetSet(mixed $offset, mixed $value): void
     {
-        $keys = explode('.', $offset);
+        $keys = explode('.', (string) $offset);
         $array = &$this->elements;
         while (count($keys) > 1) {
             $key = array_shift($keys);
@@ -107,7 +106,7 @@ class ZArray implements IteratorAggregate, ArrayAccess, Countable
         }
     }
 
-    public function offsetUnset($offset): void
+    public function offsetUnset(mixed $offset): void
     {
         if ($this->offsetExists($offset)) {
             unset($this->elements[$offset]);
@@ -121,29 +120,13 @@ class ZArray implements IteratorAggregate, ArrayAccess, Countable
         return count($this->elements);
     }
 
-    // ========== Serializable ==========
+    // ========== 序列化 ==========
 
-    public function serialize(): ?string
-    {
-        return serialize($this->__serialize());
-    }
-
-    public function unserialize($data): void
-    {
-        $this->__unserialize(unserialize($data));
-    }
-
-    /**
-     * PHP 7.4+ 序列化支持
-     */
     public function __serialize(): array
     {
         return ['elements' => $this->elements];
     }
 
-    /**
-     * PHP 7.4+ 反序列化支持
-     */
     public function __unserialize(array $data): void
     {
         $this->elements = $data['elements'] ?? [];

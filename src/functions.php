@@ -639,9 +639,7 @@ if (!function_exists('sanitize')) {
         $title = preg_replace('|---([a-fA-F0-9][a-fA-F0-9])---|', '%$1', $title);
 
         if (seems_utf8($title)) {
-            if (function_exists('mb_strtolower')) {
-                $title = mb_strtolower($title, 'UTF-8');
-            }
+            $title = mb_strtolower($title, 'UTF-8');
             $title = utf8_uri_encode($title, 200);
         }
 

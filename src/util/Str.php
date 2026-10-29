@@ -39,16 +39,12 @@ class Str
 
     public static function len(string $str, string $encoding = 'UTF-8'): int
     {
-        return function_exists('mb_strlen')
-            ? mb_strlen($str, $encoding)
-            : strlen($str);
+        return mb_strlen($str, $encoding);
     }
 
     public static function substr(string $string, int $start, ?int $length = null): string
     {
-        return function_exists('mb_substr')
-            ? mb_substr($string, $start, $length, 'UTF-8')
-            : substr($string, $start, $length);
+        return mb_substr($string, $start, $length, 'UTF-8');
     }
 
     public static function truncate(string $value, int $limit = 100, string $end = '...'): string

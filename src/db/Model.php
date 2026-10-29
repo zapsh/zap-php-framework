@@ -299,29 +299,27 @@ abstract class Model implements ArrayAccess, JsonSerializable
 
     // ─── ArrayAccess / JsonSerializable ────────────────────────
 
-    public function offsetExists($offset): bool
+    public function offsetExists(mixed $offset): bool
     {
         return array_key_exists($offset, $this->attributes);
     }
 
-    #[\ReturnTypeWillChange]
-    public function offsetGet($offset)
+    public function offsetGet(mixed $offset): mixed
     {
         return $this->getAttribute($offset);
     }
 
-    public function offsetSet($offset, $value): void
+    public function offsetSet(mixed $offset, mixed $value): void
     {
         $this->setAttribute($offset, $value);
     }
 
-    public function offsetUnset($offset): void
+    public function offsetUnset(mixed $offset): void
     {
         unset($this->attributes[$offset]);
     }
 
-    #[\ReturnTypeWillChange]
-    public function jsonSerialize()
+    public function jsonSerialize(): array
     {
         return $this->toArray();
     }

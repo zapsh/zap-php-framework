@@ -100,7 +100,6 @@ class Dispatcher
             }
         } else {
             $uri = $_SERVER['REQUEST_URI'] ?? '';
-            $stripos = function_exists('mb_stripos') ? 'mb_stripos' : 'stripos';
             $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
 
             // 过滤查询字符串
@@ -113,7 +112,7 @@ class Dispatcher
             }
 
             // 去除脚本名
-            if ($stripos($uri, $scriptName) === 0) {
+            if (mb_stripos($uri, $scriptName) === 0) {
                 $uri = substr($uri, strlen($scriptName));
             }
 

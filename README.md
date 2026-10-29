@@ -4,7 +4,7 @@
 
 ## 环境要求
 
-- PHP >= 7.4
+- PHP >= 8.2
 - PDO 扩展（MySQL / PostgreSQL / SQLite）
 - OpenSSL 扩展（可选，加密模块需要）
 - Redis 扩展或 Predis（可选，Redis 缓存需要）
