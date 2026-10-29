@@ -15,7 +15,7 @@ class CurlException extends \RuntimeException
      * @param int             $code      内部错误码
      * @param \Throwable|null $previous  前一个异常
      */
-    public function __construct(string $message = '', int $curlErrno = 0, int $code = 0, \Throwable $previous = null)
+    public function __construct(string $message = '', int $curlErrno = 0, int $code = 0, ?\Throwable $previous = null)
     {
         $this->curlErrno = $curlErrno;
         if (empty($message) && $curlErrno > 0) {

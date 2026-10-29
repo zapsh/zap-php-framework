@@ -133,6 +133,13 @@ class ErrorHandler
     ];
 
     /**
+     * 提示级别 — 仅记录日志，不渲染错误页（PHP 8.x 下第三方库的弃用提示不应打断页面）
+     */
+    protected static array $silentErrors = [
+        E_NOTICE, E_USER_NOTICE, E_DEPRECATED, E_USER_DEPRECATED,
+    ];
+
+    /**
      * 将错误码转为人可读名称
      */
     protected function errorTypeString(int $errno): string
@@ -149,7 +156,7 @@ class ErrorHandler
             E_USER_ERROR        => 'User Error',
             E_USER_WARNING      => 'User Warning',
             E_USER_NOTICE       => 'User Notice',
-            E_STRICT            => 'Strict Standards',
+            2048                => 'Strict Standards', // E_STRICT（PHP 8.4 起该常量已弃用）
             E_RECOVERABLE_ERROR => 'Recoverable Error',
             E_DEPRECATED        => 'Deprecated',
             E_USER_DEPRECATED   => 'User Deprecated',
@@ -207,12 +214,21 @@ class ErrorHandler
             return true;
         }
 
+        $errorType = $this->errorTypeString($errno);
+
+        // 提示 / 弃用级别：仅记录日志，不输出错误页，避免中断正常页面渲染
+        if (in_array($errno, static::$silentErrors, true)) {
+            $this->logWarning("{$errorType}: {$errstr}", [
+                'file' => $error_file,
+                'line' => $error_line,
+            ]);
+            return true;
+        }
+
         // 是否属于致命级别
         $isFatal = in_array($errno, static::$fatalErrors, true);
 
         $this->clearOutputBuffer();
-
-        $errorType = $this->errorTypeString($errno);
 
         if (app()->isConsole()) {
             $this->consoleError($errno, $errstr, $error_file, $error_line);
@@ -408,11 +424,24 @@ class ErrorHandler
     // ───────────────────── 渲染输出 ─────────────────────
 
     /**
+     * 发送 HTTP 状态码
+     *
+     * 响应头已发送时跳过，避免 PHP 8.x 触发
+     * "Cannot set response code - headers already sent" 警告。
+     */
+    protected function sendStatusCode(int $statusCode): void
+    {
+        if (!headers_sent()) {
+            http_response_code($statusCode);
+        }
+    }
+
+    /**
      * 渲染错误页面
      */
     protected function renderErrorPage(int $statusCode, string $html, array $context): void
     {
-        http_response_code($statusCode);
+        $this->sendStatusCode($statusCode);
 
         // 自定义视图
         if (isset(static::$errorViews[$statusCode])) {
@@ -440,7 +469,7 @@ class ErrorHandler
      */
     protected function renderProductionError(int $statusCode): void
     {
-        http_response_code($statusCode);
+        $this->sendStatusCode($statusCode);
 
         if (static::$productionView) {
             try {
@@ -470,8 +499,10 @@ class ErrorHandler
      */
     protected function renderJsonError(Throwable $e, int $statusCode): void
     {
-        http_response_code($statusCode);
-        header('Content-Type: application/json; charset=utf-8');
+        $this->sendStatusCode($statusCode);
+        if (!headers_sent()) {
+            header('Content-Type: application/json; charset=utf-8');
+        }
 
         $payload = [
             'error'   => true,
@@ -845,8 +876,8 @@ class ErrorHandler
      */
     protected function logError(string $message, array $context = []): void
     {
-        if (class_exists('zap\log\Log')) {
-            \zap\log\Log::emergency($message, $context);
+        if (class_exists(\zap\Log::class)) {
+            \zap\Log::emergency($message, $context);
         }
     }
 
@@ -855,8 +886,8 @@ class ErrorHandler
      */
     protected function logWarning(string $message, array $context = []): void
     {
-        if (class_exists('zap\log\Log')) {
-            \zap\log\Log::warning($message, $context);
+        if (class_exists(\zap\Log::class)) {
+            \zap\Log::warning($message, $context);
         }
     }
 
@@ -888,8 +919,10 @@ class ErrorHandler
      */
     public static function abort(int $statusCode = 500, string $message = '', array $headers = []): void
     {
-        foreach ($headers as $key => $value) {
-            header("{$key}: {$value}");
+        if (!headers_sent()) {
+            foreach ($headers as $key => $value) {
+                header("{$key}: {$value}");
+            }
         }
 
         throw new exception\HttpException($statusCode, $message ?: static::defaultMessage($statusCode));

@@ -218,7 +218,7 @@ class Requests
         $errno = curl_errno($ch);
         $info  = curl_getinfo($ch);
 
-        curl_close($ch);
+        // PHP 8 起 cURL 句柄为对象，由 GC 回收；curl_close() 自 8.5 起弃用
 
         if ($error) {
             throw new CurlException('cURL Error: ' . $error, $errno);
@@ -279,7 +279,6 @@ class Requests
             }
         }
 
-        curl_multi_close($multiHandle);
         return $results;
     }
 

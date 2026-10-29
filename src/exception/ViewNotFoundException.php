@@ -12,7 +12,7 @@ class ViewNotFoundException extends \RuntimeException
      * @param int             $code      错误码
      * @param \Throwable|null $previous  前一个异常
      */
-    public function __construct(string $viewName = '', string $message = '', int $code = 0, \Throwable $previous = null)
+    public function __construct(string $viewName = '', string $message = '', int $code = 0, ?\Throwable $previous = null)
     {
         $this->viewName = $viewName;
         if (empty($message)) {

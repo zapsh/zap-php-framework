@@ -283,7 +283,7 @@ class Pagination
     /**
      * Build an HTML link element.
      */
-    protected function buildLink(int $page, string $text = null): string
+    protected function buildLink(int $page, ?string $text = null): string
     {
         $text   = $text ?? (string)$page;
         $url    = $this->url($page);

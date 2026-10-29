@@ -16,6 +16,17 @@
 - 移除 `ZArray::serialize()` / `ZArray::unserialize()` 旧 `Serializable` 风格方法，仅保留 `__serialize()` / `__unserialize()`
 - 移除 mbstring 扩展缺失时的回退分支（`Str::len()` / `Str::substr()` / `Dispatcher::parseUrlPath()` / `sanitize()`），`ext-mbstring` 已是硬依赖
 
+### 修复（PHP 8.4 / 8.5 兼容）
+
+- `zap\ErrorHandler`：不再引用 PHP 8.4 起弃用的 `E_STRICT` 常量，错误等级映射改用字面量 `2048`
+- `zap\ErrorHandler`：`http_response_code()` 与 `header()` 输出前增加 `headers_sent()` 判断，修复 "Cannot set response code - headers already sent" 警告（新增 `sendStatusCode()` 内部方法）
+- `zap\ErrorHandler`：`E_NOTICE` / `E_USER_NOTICE` / `E_DEPRECATED` / `E_USER_DEPRECATED` 改为仅记录日志，不再渲染整页错误，避免第三方库的弃用提示打断正常页面输出
+- `zap\ErrorHandler`：修正 `logError()` / `logWarning()` 的日志类引用（原 `zap\log\Log` 不存在，导致错误日志被丢弃），改为 `zap\Log`
+- `zap\image\Image`：移除 PHP 8.5 起弃用的 `imagedestroy()`（PHP 8 起 GD 资源由 GC 回收），`destroy()` / `__destruct()` 改为释放引用
+- `zap\net\Requests`：移除 PHP 8.5 起弃用的 `curl_close()` / `curl_multi_close()`
+- `zap\fileupload\UploadedFile`、`zap\util\FileUtils`：移除 PHP 8.5 起弃用的 `finfo_close()`
+- 隐式可空参数改为显式声明（PHP 8.4 起弃用）：`Query::whereColumn()` / `orWhereColumn()` / `pluck()` / `update()`、`Pagination::buildLink()`、`ViewNotFoundException` / `NotFoundException` / `CurlException` 构造参数
+
 ### 注意
 
 - 升级后需重新生成自动加载：`composer update zapsh/zap-php-framework`（或 `composer dump-autoload`），否则 `autoload_files.php` 仍会尝试加载已删除的 `src/compat.php`

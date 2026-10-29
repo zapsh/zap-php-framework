@@ -296,7 +296,7 @@ class Query
     /**
      * Compare two columns.
      */
-    public function whereColumn(string $first, string $operator, string $second = null, string $boolean = 'AND'): self
+    public function whereColumn(string $first, string $operator, ?string $second = null, string $boolean = 'AND'): self
     {
         if ($second === null) {
             [$second, $operator] = [$operator, '='];
@@ -312,7 +312,7 @@ class Query
         ]]);
     }
 
-    public function orWhereColumn(string $first, string $operator, string $second = null): self
+    public function orWhereColumn(string $first, string $operator, ?string $second = null): self
     {
         return $this->whereColumn($first, $operator, $second, 'OR');
     }
@@ -878,7 +878,7 @@ class Query
     /**
      * Get an array of values for a single column.
      */
-    public function pluck(string $column, string $key = null): array
+    public function pluck(string $column, ?string $key = null): array
     {
         $this->columns = $key ? [$key, $column] : [$column];
         $results = $this->get();
@@ -959,7 +959,7 @@ class Query
      *  - Chained:   ->set('col', val)->set('col2', val2)->where(...)->update()
      *  - Direct:    ->where(...)->update(['col' => val])
      */
-    public function update(array $data = null): int
+    public function update(?array $data = null): int
     {
         $this->type = 'update';
 

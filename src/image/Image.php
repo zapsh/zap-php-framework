@@ -108,9 +108,6 @@ class Image
 
     private function initFromResource($gdResource, $mimeType)
     {
-        if ($this->image) {
-            imagedestroy($this->image);
-        }
         $this->image    = $gdResource;
         $this->mimeType = $mimeType;
         $this->width    = imagesx($gdResource);
@@ -771,11 +768,9 @@ class Image
         } else {
             // 偏灰度
             imagecopymerge($this->image, $gray, 0, 0, 0, 0, $w, $h, (int)($amount * 100));
-            imagedestroy($gray);
             return $this;
         }
 
-        imagedestroy($this->image);
         $this->image = $result;
 
         return $this;
@@ -1195,25 +1190,25 @@ class Image
     /**
      * 显式销毁 GD 资源
      *
+     * PHP 8 起 GD 资源为对象，由引用计数 / GC 自动回收，
+     * 无需也无法再调用 imagedestroy()（PHP 8.5 已弃用该函数）。
+     *
      * @return void
      */
     public function destroy()
     {
         if ($this->image && !$this->destroyed) {
-            imagedestroy($this->image);
             $this->image = null;
             $this->destroyed = true;
         }
     }
 
     /**
-     * 析构：自动释放资源
+     * 析构：释放 GD 资源引用
      */
     public function __destruct()
     {
-        if (!$this->destroyed && $this->image) {
-            imagedestroy($this->image);
-        }
+        $this->image = null;
     }
 
     /**

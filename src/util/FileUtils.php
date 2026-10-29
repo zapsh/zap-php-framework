@@ -53,7 +53,6 @@ class FileUtils
         if (function_exists('finfo_open')) {
             $finfo = finfo_open(FILEINFO_MIME_TYPE);
             $type = finfo_file($finfo, $filename);
-            finfo_close($finfo);
             return $type;
         }
         return false;
