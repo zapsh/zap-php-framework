@@ -13,7 +13,7 @@
 ## 安装
 
 ```bash
-composer require zapj/zap-php-framework
+composer require zapsh/zap-php-framework
 ```
 
 ## 项目目录结构
