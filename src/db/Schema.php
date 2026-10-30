@@ -117,7 +117,13 @@ class Schema
         $table = $pdo->quoteTable($tableName);
 
         try {
-            $pdo->rawExec("SELECT 1 FROM {$table} LIMIT 1");
+            $stm = $pdo->query("SELECT 1 FROM {$table} LIMIT 1");
+
+            if ($stm instanceof \PDOStatement) {
+                $stm->fetchAll();
+                $stm->closeCursor();
+            }
+
             return true;
         } catch (\Exception $e) {
             return false;
