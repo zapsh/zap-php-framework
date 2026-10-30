@@ -111,8 +111,58 @@ class Response
      */
     public static function back(string $fallback = '/', int $code = 302): self
     {
-        $url = $_SERVER['HTTP_REFERER'] ?? $fallback;
-        return static::redirect($url, $code);
+        $referer = (string)($_SERVER['HTTP_REFERER'] ?? '');
+
+        // Referer 完全由客户端控制，必须做同源校验，否则等同于开放重定向
+        if ($referer !== '' && !static::isSameOrigin($referer)) {
+            $referer = '';
+        }
+
+        return static::redirect($referer !== '' ? $referer : $fallback, $code);
+    }
+
+    /**
+     * 判断 URL 是否与当前请求同源（用于过滤外部传入的重定向目标）
+     */
+    protected static function isSameOrigin(string $url): bool
+    {
+        if ($url === '') {
+            return false;
+        }
+
+        // 站内相对路径（'//host/path' 属于协议相对 URL，需排除）
+        if ($url[0] === '/' && ($url[1] ?? '') !== '/') {
+            return true;
+        }
+
+        // 仅含查询串/锚点
+        if ($url[0] === '?' || $url[0] === '#') {
+            return true;
+        }
+
+        $host = parse_url($url, PHP_URL_HOST);
+        if ($host === null || $host === false || $host === '') {
+            return true; // 非绝对 URL
+        }
+
+        return strtolower($host) === strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+    }
+
+    /**
+     * 构造 Content-Disposition 的 filename / filename* 部分
+     *
+     * 仅保留可打印 ASCII 并剔除引号与反斜杠，CR/LF 也已由该范围排除，
+     * 因此不会破坏响应头；非 ASCII 文件名通过 RFC 5987 的 filename* 传递。
+     */
+    protected static function contentDispositionFilename(string $fileName): string
+    {
+        $ascii = (string)preg_replace('/[^\x20-\x7E]/', '', $fileName);
+        $ascii = str_replace(['\\', '"'], '', $ascii);
+        if (trim($ascii) === '') {
+            $ascii = 'download';
+        }
+
+        return 'filename="' . $ascii . '"; filename*=UTF-8\'\'' . rawurlencode($fileName);
     }
 
     /**
@@ -139,7 +189,9 @@ class Response
 
         $instance = new self(null, 200);
         $instance->headers['Content-Type']        = 'application/octet-stream';
-        $instance->headers['Content-Disposition'] = 'attachment; filename="' . addslashes($fileName) . '"';
+        // 文件名需剔除换行与引号，防止响应头拆分/注入；非 ASCII 部分用 RFC 5987 的 filename* 表达
+        $instance->headers['Content-Disposition'] = 'attachment; '
+            . static::contentDispositionFilename($fileName);
         $instance->headers['Content-Length']      = (string)filesize($filePath);
         $instance->headers['X-Sendfile']          = $filePath; // 标记为文件下载模式
 

@@ -37,11 +37,10 @@ class Html
         }
     }
 
-    /** @deprecated 使用 doctype() */
-    public function docType(string $type = 'html5'): string
-    {
-        return self::doctype($type);
-    }
+    // 注意：此处原先还有一个实例方法 docType()。由于 PHP 方法名大小写不敏感，
+    // 它与上面的静态 doctype() 构成重复声明，会导致加载该类时直接
+    // "Cannot redeclare zap\util\Html::docType()" 致命错误。
+    // 旧的 $html->docType() 写法仍可用：PHP 允许通过 -> 调用静态方法。
 
     public static function br(): string
     {
