@@ -6,7 +6,7 @@ class FileCache implements CacheInterface
 {
     protected $cacheDir;
 
-    protected string $isCache = 'enabled';
+    protected bool $isCache = true;
 
     public function __construct($options = null)
     {
@@ -36,17 +36,31 @@ class FileCache implements CacheInterface
             $content = file_get_contents($filename);
 
             if(!empty($content)){
-                $data = unserialize($content);
+                // 关键安全点：只允许还原 stdClass（本类自身的容器结构），
+                // 任何其它类都会被降级为 __PHP_Incomplete_Class 而不会实例化，
+                // 因此缓存文件即便被投毒也无法触发 POP 链执行任意代码。
+                $data = @unserialize($content, ['allowed_classes' => ['stdClass']]);
 
-                if($data === false || $ttl !== $data->ttl){
-                    $data->ttl = 0;
+                // 注意：ttl 为 null 表示永不过期，因此不能用 isset() 判断——
+                // isset() 遇到 null 会返回 false，会把永久缓存（如路由缓存）误判为无效。
+                if($data instanceof \stdClass && property_exists($data, 'ttl') && property_exists($data, 'content')){
+                    $notExpired = ($data->ttl === null || $data->ttl > time());
+
+                    // 调用方在读取时又指定了 ttl：按写入时间再做一次判定
+                    if($notExpired && $ttl !== null && isset($data->created_at)
+                        && ($data->created_at + $ttl) <= time()){
+                        $notExpired = false;
+                    }
+
+                    if($notExpired){
+                        return $data->content;
+                    }
+
+                    @unlink($filename);
+                } else {
+                    // 数据损坏或格式不符：直接丢弃，避免返回不可预期的值
+                    @unlink($filename);
                 }
-
-                if($data->ttl === null || $data->ttl > time()){
-                    return $data->content;
-                }
-
-                unlink($filename);
             }
 
         }
@@ -70,9 +84,10 @@ class FileCache implements CacheInterface
             mkdir($dirPath, 0755, true);
         }
 
-        $data          = new \stdClass;
-        $data->ttl     = $ttl ? time() + $ttl : null;
-        $data->content = $value;
+        $data             = new \stdClass;
+        $data->created_at = time();
+        $data->ttl        = ($ttl !== null && $ttl > 0) ? time() + $ttl : null;
+        $data->content    = $value;
 
         return file_put_contents($file, serialize($data));
     }

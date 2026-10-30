@@ -8,6 +8,9 @@ namespace zap\crypto;
  * 支持 AES-128/192/256 的 CBC/GCM/CTR/ECB 模式，提供 Base64 输出、
  * HMAC 认证加密、密钥派生和 JSON 载荷加密。
  *
+ * 使用前必须先设置密钥（推荐取自 config('config.app_key')）。
+ * 未提供密钥时 encrypt() 会抛出 RuntimeException，不会退化为不安全的空密钥加密。
+ *
  * @method static string encrypt(string $plain, ?string $key = null, ?string $method = null)
  * @method static ?string decrypt(string $cipher, ?string $key = null, ?string $method = null)
  * @method static string encryptToBase64(string $plain, ?string $key = null, ?string $method = null)
@@ -104,7 +107,15 @@ class OpenSSL
         $key    = $key ?? $this->key;
         $method = $method ?? $this->cipher;
         $ivSize = openssl_cipher_iv_length($method);
-        $iv     = openssl_random_pseudo_bytes($ivSize);
+
+        if ($ivSize === false) {
+            throw new \InvalidArgumentException("Unsupported cipher method: {$method}");
+        }
+
+        // random_bytes() 才是密码学安全的随机源；
+        // openssl_random_pseudo_bytes() 在极端情况下可能返回非强随机字节。
+        // 注意 ECB 之类不需要 IV 的算法 ivSize 为 0，random_bytes(0) 会抛错，因此需要分支处理。
+        $iv = $ivSize > 0 ? random_bytes($ivSize) : '';
 
         $encrypted = openssl_encrypt($plain, $method, $this->resolveKey($key), OPENSSL_RAW_DATA, $iv);
 
@@ -288,13 +299,21 @@ class OpenSSL
     // ────────── 内部 ──────────
 
     /**
-     * 确保密钥为正确长度的二进制字符串
+     * 确保密钥存在
+     *
+     * 过去在未配置密钥时会静默降级为空串密钥，等于「用一把所有人都能猜到的钥匙上锁」，
+     * 却让调用方以为数据已被加密。这里改为直接抛错，让配置问题立即暴露。
+     *
+     * @throws \RuntimeException 未提供密钥时
      */
     protected function resolveKey(?string $key): string
     {
-        if ($key === null) {
-            return '';
+        if ($key === null || $key === '') {
+            throw new \RuntimeException(
+                'Encryption key is missing: please configure app_key before using OpenSSL encryption.'
+            );
         }
+
         return $key;
     }
 }

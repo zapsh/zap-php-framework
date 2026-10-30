@@ -2,7 +2,7 @@
 
 namespace zap\http;
 
-use zap\http\middleware\IMiddleware;
+use zap\exception\NotFoundException;
 
 class Route
 {
@@ -197,27 +197,54 @@ class Route
 
         if (is_string($this->fn) && strpos($this->fn, '@') !== false) {
             // Controller@method 格式
-            [$controllerClass, $method] = explode('@', $this->fn);
+            [$controllerClass, $method] = explode('@', $this->fn, 2);
 
             // 保存到 Router 供全局访问（如 UrlHelper 用于 active 匹配）
+            // 这一段失败不影响请求处理，因此只做信息补充
             try {
                 $shortName = (new \ReflectionClass($controllerClass))->getShortName();
                 $controllerName = strtolower(preg_replace('/Controller$/i', '', $shortName));
                 app()->router->controller = $controllerName;
                 app()->router->method = strtolower($method);
-            } catch (\Throwable $e) {}
-
-            $reflectedMethod = new \ReflectionMethod($controllerClass, $method);
-            if ($reflectedMethod->isPublic() && !$reflectedMethod->isAbstract()) {
-                $this->runMiddlewaresAndHandler(function () use ($controllerClass, $method, $params, $reflectedMethod) {
-                    if ($reflectedMethod->isStatic()) {
-                        return call_user_func_array([$controllerClass, $method], $params);
-                    }
-                    $instance = new $controllerClass();
-                    $instance->setParams($params);
-                    return call_user_func_array([$instance, $method], $params);
-                });
+            } catch (\Throwable $e) {
+                // 控制器不可用时由下面的检查统一抛出 404
             }
+
+            if (!class_exists($controllerClass)) {
+                throw new NotFoundException("Controller not found: {$controllerClass}");
+            }
+
+            if (!method_exists($controllerClass, $method)) {
+                throw new NotFoundException("Action not found: {$controllerClass}@{$method}");
+            }
+
+            try {
+                $reflectedMethod = new \ReflectionMethod($controllerClass, $method);
+            } catch (\ReflectionException $e) {
+                throw new NotFoundException("Action not found: {$controllerClass}@{$method}", 0, $e);
+            }
+
+            // 非 public / 抽象方法不可作为路由入口，
+            // 必须明确抛错，否则会静默返回空响应且难以排查
+            if (!$reflectedMethod->isPublic() || $reflectedMethod->isAbstract()) {
+                throw new NotFoundException("Action is not accessible: {$controllerClass}@{$method}");
+            }
+
+            if ($reflectedMethod->isStatic()) {
+                $this->runMiddlewaresAndHandler(function () use ($controllerClass, $method, $params) {
+                    return call_user_func_array([$controllerClass, $method], $params);
+                });
+                return;
+            }
+
+            $this->runMiddlewaresAndHandler(function () use ($controllerClass, $method, $params) {
+                // 通过容器解析，使控制器支持构造注入；失败时回退到直接实例化
+                $instance = $this->resolveInstance($controllerClass);
+                if (method_exists($instance, 'setParams')) {
+                    $instance->setParams($params);
+                }
+                return call_user_func_array([$instance, $method], $params);
+            });
 
             return;
         }
@@ -229,6 +256,28 @@ class Route
             });
             return;
         }
+
+        // 处理器既不是闭包、也不是 Controller@method 或可调用值
+        throw new NotFoundException('Route handler is not callable for pattern: ' . $this->pattern);
+    }
+
+    /**
+     * 解析类实例：优先通过 IoC 容器以支持构造注入
+     *
+     * 容器不可用或解析失败时回退到 new $class()，
+     * 保证既有代码不会因为容器限制而突然失效。
+     */
+    protected function resolveInstance(string $class): object
+    {
+        try {
+            if (function_exists('app') && app() !== null) {
+                return app()->make($class);
+            }
+        } catch (\Throwable $e) {
+            // 忽略，走下面的回退分支
+        }
+
+        return new $class();
     }
 
     /**
@@ -248,7 +297,8 @@ class Route
                 return $handler();
             }
             $middlewareClass = array_shift($middlewares);
-            $middleware = new $middlewareClass();
+            // 中间件同样走容器解析，便于注入服务；失败时回退到直接实例化
+            $middleware = $this->resolveInstance($middlewareClass);
             return $middleware->handle(ZapRequest::instance(), $next);
         };
 

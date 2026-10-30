@@ -103,12 +103,13 @@ class MemcacheCache implements CacheInterface
             return $default;
         }
 
-        if ($value !== false) {
-            $data = @unserialize($value);
+        if ($value !== false && is_string($value)) {
+            // 禁止反序列化出任何类实例，防止缓存被投毒后触发对象注入
+            $data = @unserialize($value, ['allowed_classes' => false]);
             return $data !== false ? $data : $value;
         }
 
-        return $default;
+        return $value !== false ? $value : $default;
     }
 
     public function set($key, $value, $ttl = null): bool

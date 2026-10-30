@@ -66,6 +66,9 @@ abstract class Model implements ArrayAccess, JsonSerializable
 
     /**
      * Whether the model is currently being saved.
+     *
+     * 仅用于标记保存过程（供子类事件钩子使用），
+     * **不再**用于跳过 mass assignment 保护 —— 白名单在任何阶段都必须生效。
      */
     protected $saving = false;
 
@@ -358,10 +361,9 @@ abstract class Model implements ArrayAccess, JsonSerializable
      */
     protected function filterFillable(array $attributes): array
     {
-        // If we're saving (not initial fill), skip mass assignment protection
-        if ($this->saving) {
-            return $attributes;
-        }
+        // 这里不做任何「保存中」的例外放行：时间字段由 save() 通过 setAttribute() 写入，
+        // 本身不经过本方法。若在此处临时关闭保护，任何在保存流程中调用的 fill()
+        // 都会把未过滤的用户输入直接写库，等同于绕过白名单。
 
         // If fillable is specified, only allow those
         if (!empty($this->fillable)) {
@@ -369,7 +371,8 @@ abstract class Model implements ArrayAccess, JsonSerializable
         }
 
         // If guarded is specified, exclude those
-        if ($this->guarded === ['*']) {
+        // 只要 guarded 中出现 '*' 即视为全量拦截（支持 ['id', '*'] 这类混合写法）
+        if (in_array('*', $this->guarded, true)) {
             return [];
         }
 
