@@ -594,6 +594,19 @@ class UrlHelper
         $path = $queryPos !== false ? substr($url, 0, $queryPos) : $url;
         $query = $queryPos !== false ? substr($url, $queryPos) : '';
 
+        // 后台地址不加伪静态后缀（/z-admin/... 由后台路由直接处理）
+        $adminPrefix = $this->adminPrefix();
+        if ($adminPrefix !== '') {
+            $checkPath = $path;
+            $dir = $this->scriptDir();
+            if ($dir !== '' && str_starts_with($checkPath, $dir . '/')) {
+                $checkPath = substr($checkPath, strlen($dir));
+            }
+            if ($checkPath === '/' . $adminPrefix || str_starts_with($checkPath, '/' . $adminPrefix . '/')) {
+                return $scheme . $url;
+            }
+        }
+
         // 已以 suffix 结尾则跳过
         if (str_ends_with($path, $suffix)) {
             return $scheme . $url;
