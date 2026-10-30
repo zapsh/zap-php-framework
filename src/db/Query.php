@@ -23,6 +23,11 @@ class Query
     protected $columns = [];
 
     /**
+     * 绑定参数命名计数器（嵌套子查询共享，避免同名占位符冲突）。
+     */
+    protected int $bindIndex = 0;
+
+    /**
      * The table the query is targeting.
      */
     protected $from = '';
@@ -241,7 +246,9 @@ class Query
 
         if ($column instanceof \Closure) {
             $query = new self($this->db, $this->from, $this->alias);
+            $query->bindIndex = $this->bindIndex;
             $column($query);
+            $this->bindIndex = $query->bindIndex;
             $this->wheres[] = ['type' => 'nested', 'query' => $query];
             return $this;
         }
@@ -281,7 +288,9 @@ class Query
 
         if ($column instanceof \Closure) {
             $query = new self($this->db, $this->from, $this->alias);
+            $query->bindIndex = $this->bindIndex;
             $column($query);
+            $this->bindIndex = $query->bindIndex;
             $this->wheres[] = ['type' => 'nested', 'query' => $query, 'boolean' => 'OR'];
             return $this;
         }
@@ -476,9 +485,8 @@ class Query
                 case 'BETWEEN':
                 case 'NOT BETWEEN':
                     // Parameterized BETWEEN to prevent SQL injection
-                    $paramCount = count($this->params);
-                    $b1 = '_bet1_' . $paramCount;
-                    $b2 = '_bet2_' . $paramCount;
+                    $b1 = $this->nextBind('bet1_');
+                    $b2 = $this->nextBind('bet2_');
                     $values    = (array) $value;
                     $this->wheres[] = [
                         'sql'     => "{$colName} {$operator} :{$b1} AND :{$b2}",
@@ -504,14 +512,16 @@ class Query
                         ];
                     } elseif ($value instanceof \Closure) {
                         $sub = new self($this->db, $this->from, $this->alias);
+                        $sub->bindIndex = $this->bindIndex;
                         $value($sub);
+                        $this->bindIndex = $sub->bindIndex;
                         $this->wheres[] = [
                             'type'    => 'nested',
                             'query'   => $sub,
                             'boolean' => $boolean,
                         ];
                     } else {
-                        $bind = '_w' . count($this->params);
+                        $bind = $this->nextBind('w');
                         $this->wheres[] = [
                             'sql'     => "{$colName} {$operator} :{$bind}",
                             'boolean' => $boolean,
@@ -1413,6 +1423,18 @@ class Query
         return $sql;
     }
 
+    /**
+     * 生成一个全局唯一的绑定参数名。
+     *
+     * 之前使用 count($params) 计数，嵌套子查询各自从 0 开始，
+     * 合并后同名占位符会被覆盖，MySQL（emulate_prepares=false）会报
+     * "Invalid parameter number"。
+     */
+    protected function nextBind(string $prefix = 'w'): string
+    {
+        return '_' . $prefix . ($this->bindIndex++);
+    }
+
     protected function prepareWhereInStatement(string $colName, string $operator, array $values, string $boolean): void
     {
         if (empty($values)) {
@@ -1426,7 +1448,7 @@ class Query
 
         $placeholders = [];
         foreach ($values as $val) {
-            $bind = '_in' . count($this->params);
+            $bind = $this->nextBind('in');
             $placeholders[] = ':' . $bind;
             $this->params[$bind] = $val;
         }
