@@ -35,7 +35,7 @@ class Language
      * 设置 / 获取当前语言
      *
      * @param string|null $language
-     * @return string|$this
+     * @return static|string
      */
     public static function locale($language = null)
     {
@@ -50,7 +50,7 @@ class Language
      * 设置回退语言
      *
      * @param string $language
-     * @return $this
+     * @return static
      */
     public static function fallback($language)
     {

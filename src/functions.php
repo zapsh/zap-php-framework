@@ -537,10 +537,9 @@ if (!function_exists('abort')) {
      * @param int    $statusCode HTTP 状态码
      * @param string $message    错误消息
      * @param array  $headers    额外响应头
-     * @return never
      * @throws \zap\exception\HttpException
      */
-    function abort(int $statusCode = 500, string $message = '', array $headers = []): void
+    function abort(int $statusCode = 500, string $message = '', array $headers = []): never
     {
         ErrorHandler::abort($statusCode, $message, $headers);
     }

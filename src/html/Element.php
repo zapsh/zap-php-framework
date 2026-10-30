@@ -99,7 +99,7 @@ class Element implements \Stringable
 
     /**
      * 设置原始 HTML 内容
-     * @param string|Stringable $html
+     * @param string|\Stringable $html
      */
     public function html($html)
     {

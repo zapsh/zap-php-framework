@@ -453,7 +453,6 @@ class Validator
     /**
      * 验证数据，失败时抛出异常
      *
-     * @param array|null $data
      * @return array 验证通过的数据
      * @throws \RuntimeException
      */

@@ -1,0 +1,49 @@
+parameters:
+    # 起步等级：3。存量问题记录在 phpstan-baseline.neon，新代码不允许新增错误。
+    level: 3
+
+    paths:
+        - src
+        - tests
+
+    treatPhpDocTypesAsCertain: false
+
+    ignoreErrors:
+        # ── 以下为框架既有设计模式的已知误报 ──
+        # 单例/工厂模式在框架内大量使用 new static()，属有意设计
+        -
+            message: '#^Unsafe usage of new static\(\)\.$#'
+            path: src
+        # ZAP_SRC 由 App.php 在运行时 define()
+        -
+            message: '#^Constant ZAP_SRC not found\.$#'
+            path: src
+        # Log / Router 等通过 __callStatic 提供静态门面
+        -
+            message: '#^Static call to instance method#'
+            path: src
+        # Facade 通过 :: 访问受保护/私有方法属门面模式预期行为
+        -
+            message: '#^Unsafe call to private method#'
+            path: src
+        # Predis 为可选依赖，未安装时仅作类型提示存在
+        -
+            message: '#on an unknown class \\Predis\\Client\.$#'
+            path: src
+
+        # ── 以下为待修复的存量问题，修复后应从清单中移除 ──
+        # App::$router 通过容器魔术属性访问，后续应显式声明
+        -
+            identifier: property.notFound
+            path: src/App.php
+        # DB::query() 的声明返回类型与 PDOStatement|false 不符，需要统一
+        -
+            identifier: return.type
+            path: src/DB.php
+        # str() 助手依赖的 Str 链式实现尚未完成，字符串参数当前被丢弃
+        -
+            identifier: new.noConstructor
+            path: src/functions.php
+
+includes:
+    - phpstan-baseline.neon

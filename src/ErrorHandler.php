@@ -917,7 +917,7 @@ class ErrorHandler
      * @param string $message    错误消息
      * @param array  $headers    额外响应头
      */
-    public static function abort(int $statusCode = 500, string $message = '', array $headers = []): void
+    public static function abort(int $statusCode = 500, string $message = '', array $headers = []): never
     {
         if (!headers_sent()) {
             foreach ($headers as $key => $value) {

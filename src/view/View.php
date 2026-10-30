@@ -281,10 +281,9 @@ class View
     // ───────────────────── 布局 & 模板操作 ─────────────────────
 
     /**
-     * 设置或读取布局模板
+     * 设置布局模板
      *
-     * @param string|null $layout 布局名；null 则返回当前布局
-     * @return $this|string|false
+     * @param string $layout 布局名
      */
     public function setLayout($layout): void
     {

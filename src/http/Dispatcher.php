@@ -12,7 +12,7 @@ class Dispatcher
     protected $router;
 
     /**
-     * @var string|null URL 前缀（如 /admin），用于解析路由时移除
+     * @var string URL 前缀（如 /admin），用于解析路由时移除
      */
     protected string $routeBase = '';
 

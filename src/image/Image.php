@@ -7,7 +7,7 @@ class Image
     /** @var string 原始文件路径 */
     private $file;
 
-    /** @var resource|\GdImage GD 图像资源 */
+    /** @var resource|\GdImage|null GD 图像资源，销毁后为 null */
     private $image;
 
     /** @var int 当前图像宽度 */

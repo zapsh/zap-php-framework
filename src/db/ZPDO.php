@@ -89,12 +89,12 @@ class ZPDO extends PDO
 
     // ─── Overrides (prefix-aware) ──────────────────────────────
 
-    public function prepare($query, $options = [])
+    public function prepare($query, $options = []): PDOStatement|false
     {
         return parent::prepare($this->prepareSQL($query), $options);
     }
 
-    public function exec($statement)
+    public function exec($statement): int|false
     {
         $this->logQuery($statement, []);
         $result = parent::exec($this->prepareSQL($statement));
@@ -626,11 +626,15 @@ class ZPDO extends PDO
         }
     }
 
-    public function quote($value, $type = PDO::PARAM_STR)
+    /**
+     * 转义字符串值。
+     *
+     * 与 PDO 契约保持一致，仅接受标量：历史上这里还支持数组输入（逐个转义），
+     * 但全仓库没有任何调用方使用该行为，且它违反 PDO::quote 的返回类型契约。
+     * 需要转义一组值时请在调用方逐个处理。
+     */
+    public function quote($value, $type = PDO::PARAM_STR): string|false
     {
-        if (is_array($value)) {
-            return array_map(fn($v) => $this->quote($v), $value);
-        }
         return parent::quote((string) $value, $type);
     }
 
