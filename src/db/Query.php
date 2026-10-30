@@ -129,16 +129,78 @@ class Query
     public function select(...$columns): self
     {
         $this->type    = 'select';
-        $this->columns = $columns;
+        $this->columns = $this->normaliseColumns($columns);
 
         return $this;
     }
 
     public function addSelect(...$columns): self
     {
-        $this->columns = array_merge($this->columns, $columns);
+        $this->columns = array_merge($this->columns, $this->normaliseColumns($columns));
 
         return $this;
+    }
+
+    /**
+     * 展开 select 参数：支持数组，以及 "a,b" 形式的逗号分隔列。
+     */
+    private function normaliseColumns(array $columns): array
+    {
+        $result = [];
+        foreach ($columns as $column) {
+            if (is_array($column)) {
+                $result = array_merge($result, $this->normaliseColumns($column));
+                continue;
+            }
+            if (!is_string($column)) {
+                $result[] = $column;
+                continue;
+            }
+            foreach ($this->splitColumnList($column) as $item) {
+                $result[] = $item;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * 按顶层逗号拆分列清单（括号内的逗号不拆分，如 count(a,b)）。
+     */
+    private function splitColumnList(string $columns): array
+    {
+        if (strpos($columns, ',') === false) {
+            $trimmed = trim($columns);
+
+            return $trimmed === '' ? [] : [$trimmed];
+        }
+
+        $parts = [];
+        $depth = 0;
+        $buffer = '';
+        $length = strlen($columns);
+
+        for ($i = 0; $i < $length; $i++) {
+            $ch = $columns[$i];
+
+            if ($ch === '(') {
+                $depth++;
+            } elseif ($ch === ')') {
+                $depth = max(0, $depth - 1);
+            }
+
+            if ($ch === ',' && $depth === 0) {
+                $parts[] = trim($buffer);
+                $buffer  = '';
+                continue;
+            }
+
+            $buffer .= $ch;
+        }
+
+        $parts[] = trim($buffer);
+
+        return array_values(array_filter($parts, static fn($v) => $v !== ''));
     }
 
     public function distinct(): self
@@ -1219,19 +1281,39 @@ class Query
         if (count($this->columns) > 0) {
             $columns = [];
             foreach ($this->columns as $column) {
-                if ($column instanceof Expr) {
-                    $columns[] = $column->raw;
-                } elseif ($this->db) {
-                    $columns[] = $this->db->quoteColumn($column);
-                } else {
-                    $columns[] = $column;
-                }
+                $columns[] = $this->prepareColumn($column);
             }
             $select .= implode(', ', $columns);
         } else {
             $select .= '*';
         }
         return $select . ' FROM ';
+    }
+
+    /**
+     * 编译单个 SELECT 列。
+     *
+     * 普通列按驱动加引号；函数调用、别名、算术等表达式原样输出，
+     * 否则 MySQL 下会把 "count(id) as total" 整串当成一个标识符加反引号。
+     */
+    protected function prepareColumn($column): string
+    {
+        if ($column instanceof Expr) {
+            return $column->raw;
+        }
+
+        $column = trim((string) $column);
+
+        if ($column === '') {
+            return '*';
+        }
+
+        // 含括号 / 空白 / 星号 / 运算符 → 视为表达式，原样保留
+        if (preg_match('/[()\s*+\-\/%]/', $column)) {
+            return $column;
+        }
+
+        return $this->db ? $this->db->quoteColumn($column) : $column;
     }
 
     protected function prepareUnionString(): string

@@ -100,14 +100,26 @@ class TwigViewRenderer extends ViewRenderer
         foreach (View::getPath() as $basePath) {
             $basePath = rtrim(str_replace('\\', '/', $basePath), '/');
             if (strpos($fullPath, $basePath . '/') === 0) {
-                $relative = substr($fullPath, strlen($basePath) + 1);
-                // 去掉扩展名（Twig 自动处理）
-                $relative = preg_replace('/\.twig$/i', '', $relative);
-                return $relative;
+                // 必须保留 .twig 后缀：Twig 的 FilesystemLoader 按完整文件名查找，不会自动补后缀
+                return $this->ensureTwigExtension(substr($fullPath, strlen($basePath) + 1));
             }
         }
-        // 兜底：使用 basename 去掉扩展名
-        return preg_replace('/\.twig$/i', '', basename($fullPath));
+        // 兜底：使用 basename
+        return $this->ensureTwigExtension(basename($fullPath));
+    }
+
+    /**
+     * 确保模板名带 .twig 后缀（renderPartial('header') 这类调用也能正常工作）
+     */
+    private function ensureTwigExtension(string $name): string
+    {
+        if ($name === '') {
+            return $name;
+        }
+        if (strtolower(pathinfo($name, PATHINFO_EXTENSION)) === 'twig') {
+            return $name;
+        }
+        return $name . '.twig';
     }
 
     public function getLoader(): FilesystemLoader

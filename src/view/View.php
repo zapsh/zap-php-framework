@@ -510,6 +510,12 @@ class View
     {
         $ext = pathinfo($this->viewFile, PATHINFO_EXTENSION);
         if ($ext === 'twig') {
+            // 主题使用 .twig 模板时必须安装 twig/twig，给出明确提示而不是 Class not found
+            if (!class_exists(\Twig\Environment::class)) {
+                throw new \RuntimeException(
+                    '当前主题使用 Twig 模板，但未安装 twig/twig 依赖，请执行：composer require twig/twig'
+                );
+            }
             $this->engine = new TwigViewRenderer($this);
         } else {
             $this->engine = new PHPRenderer($this);
