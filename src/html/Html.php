@@ -87,7 +87,8 @@ class Html
     /** &lt;a href="..."&gt;content&lt;/a&gt; */
     public static function a(string $href, $content = null, array $attributes = []): Element
     {
-        return new Element('a', [...$attributes, 'href' => $href]);
+        // 原先直接 new Element() 而忽略了 $content，导致生成的链接始终为空
+        return static::el('a', $content, [...$attributes, 'href' => $href]);
     }
 
     /** &lt;img src="..."&gt; */

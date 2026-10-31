@@ -35,6 +35,5 @@ jobs:
       - name: PHPStan
         run: composer analyse
 
-      # 单元测试待补齐 phpunit.xml 后启用
-      # - name: PHPUnit
-      #   run: composer test
+      - name: PHPUnit
+        run: composer test

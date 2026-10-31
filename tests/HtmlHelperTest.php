@@ -13,10 +13,14 @@ use zap\html\Html;
 
 final class HtmlHelperTest extends \PHPUnit\Framework\TestCase {
     public function testHtmlHelper() {
+        $form = Html::form('/html', 'get');
+        // Html::a($href, $content) 返回 Element；html() 接受的是 HTML 字符串
+        $form->html(Html::a('/html', 'hello')->render());
 
-//        $this->expectOutputString(\zap\html\Html::create('a',['id'=>'123'])->setInnerHtml(\zap\html\Html::create('h1')->setInnerHtml('hello')));
-//        $this->expectOutputString(Html::a('Hello',['href'=>'https://hello.com','target'=>'_blank']));
-//        $this->expectOutputString(Html::b('你好'));
-        $this->expectOutputString(Html::form(['action'=>'/html','method'=>'get'])->html(Html::a('hello',['href'=>'/html'])));
+        $html = $form->render();
+
+        $this->assertStringContainsString('<form', $html);
+        $this->assertStringContainsString('action="/html"', $html);
+        $this->assertStringContainsString('<a href="/html">hello</a>', $html);
     }
 }
