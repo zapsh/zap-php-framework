@@ -6,6 +6,32 @@ use ArrayAccess;
 use JsonSerializable;
 use zap\util\Arr;
 
+/**
+ * 说明：实例方法不存在时会经 __call() 转发到 Query，静态方法经 __callStatic() 转发。
+ * 下列 @method 声明仅为静态分析（IDE / PHPStan）可见，运行时仍由魔术方法处理。
+ *
+ * @method static \zap\db\Query createQuery()
+ * @method static \zap\db\Query where(mixed $column, mixed $operator = null, mixed $value = null)
+ * @method static \zap\db\Query orWhere(mixed $column, mixed $operator = null, mixed $value = null)
+ * @method static \zap\db\Query whereRaw(string $sql, array $params = [])
+ * @method static \zap\db\Query select(mixed ...$columns)
+ * @method static \zap\db\Query orderBy(string $column, string $direction = 'ASC')
+ * @method static \zap\db\Query limit(int $limit, int|null $offset = null)
+ * @method static \zap\db\Query offset(int $offset)
+ * @method static \zap\db\Query groupBy(mixed $column)
+ * @method static \zap\db\Query having(mixed $column, mixed $operator = null, mixed $value = null)
+ * @method static \zap\db\Query join(mixed $table, string $on)
+ * @method static \zap\db\Query leftJoin(mixed $table, string $on)
+ * @method static mixed get(int $fetchMode = 0)
+ * @method static mixed first()
+ * @method static mixed fetch(int $fetchMode = 0)
+ * @method static mixed fetchAll(int $fetchMode = 0)
+ * @method static int count()
+ * @method static mixed find(mixed $id)
+ * @method static int updateAll(array $data, string $conditions = '', array $params = [])
+ * @method static int insert(array $data)
+ * @method static int delete(string $conditions = '', array $params = [])
+ */
 abstract class Model implements ArrayAccess, JsonSerializable
 {
     /**

@@ -729,9 +729,20 @@ class Query
 
     // ─── Limit / Offset / Paginate ─────────────────────────────
 
-    public function limit($value): self
+    /**
+     * 设置 LIMIT
+     *
+     * @param int      $value  返回条数
+     * @param int|null $offset 偏移量；调用方写成 limit($size, $offset) 时也能正确生效
+     */
+    public function limit($value, $offset = null): self
     {
         $this->limit = (int) $value;
+
+        if ($offset !== null) {
+            $this->offset($offset);
+        }
+
         return $this;
     }
 

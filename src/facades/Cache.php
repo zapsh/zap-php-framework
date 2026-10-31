@@ -16,6 +16,9 @@ use zap\cache\RedisCache;
  * @method static setMultiple($values, $ttl = null)
  * @method static deleteMultiple($keys)
  * @method static bool has($key)
+ * @method static increment($key, $step = 1)
+ * @method static decrement($key, $step = 1)
+ * @method static incrementOrSet($key, $ttl = null, $step = 1)
  *
  */
 class Cache extends Facade
