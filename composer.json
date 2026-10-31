@@ -33,13 +33,15 @@
   "minimum-stability": "stable",
   "require-dev": {
     "phpunit/phpunit": "^11.5",
-    "phpstan/phpstan": "^2.3"
+    "phpstan/phpstan": "^2.3",
+    "monolog/monolog": "^3.0",
+    "twig/twig": "^3.0"
   },
   "suggest": {
     "monolog/monolog": "Allows more advanced logging with multiple handlers"
   },
   "scripts": {
-    "test": "phpunit",
-    "analyse": "phpstan analyse --memory-limit=1G"
+    "test": "@php vendor/phpunit/phpunit/phpunit",
+    "analyse": "@php vendor/phpstan/phpstan/phpstan analyse --memory-limit=1G"
   }
 }
