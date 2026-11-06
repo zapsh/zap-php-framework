@@ -1,0 +1,26 @@
+<?php
+
+namespace zap\db;
+
+class Expr
+{
+    public $raw;
+
+    public function __construct($value) {
+        $this->raw = $value;
+    }
+
+    /**
+     * Make Expr
+     * @param mixed $value
+     * @return Expr
+     */
+    public static function make($value): Expr
+    {
+        return new static($value);
+    }
+
+    public function __toString(): string {
+        return (string) $this->raw;
+    }
+}

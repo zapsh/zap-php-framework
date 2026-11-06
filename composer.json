@@ -1,0 +1,47 @@
+{
+  "name": "zapsh/zap-php-framework",
+  "description": "zap php framework",
+  "license": "MIT",
+  "type": "library",
+  "authors": [
+    {
+      "name": "z",
+      "email": "z@zap.cn"
+    }
+  ],
+  "require": {
+    "php": ">=8.2.0",
+    "ext-pdo": "*",
+    "ext-curl": "*",
+    "ext-mbstring": "*",
+    "ext-json": "*",
+    "ext-openssl": "*",
+    "ext-dom": "*",
+    "ext-simplexml": "*"
+  },
+  "autoload": {
+    "files": ["src/functions.php"],
+    "psr-4": {
+      "zap\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "zap\\tests\\": "tests/"
+    }
+  },
+  "minimum-stability": "stable",
+  "require-dev": {
+    "phpunit/phpunit": "^11.5",
+    "phpstan/phpstan": "^2.3",
+    "monolog/monolog": "^3.0",
+    "twig/twig": "^3.0"
+  },
+  "suggest": {
+    "monolog/monolog": "Allows more advanced logging with multiple handlers"
+  },
+  "scripts": {
+    "test": "@php vendor/phpunit/phpunit/phpunit",
+    "analyse": "@php vendor/phpstan/phpstan/phpstan analyse --memory-limit=1G"
+  }
+}

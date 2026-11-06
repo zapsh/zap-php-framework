@@ -1,0 +1,122 @@
+<!-- ZAP Debug Bar: 由 zap\debug\DebugBar 注入，固定定位，不参与文档流 -->
+<style>
+#zap-dbg-host{all:initial;display:block!important;position:fixed!important;left:0!important;right:0!important;bottom:0!important;top:auto!important;width:auto!important;height:auto!important;max-width:none!important;min-width:0!important;max-height:none!important;z-index:2147483647!important;margin:0!important;padding:0!important;border:0!important;float:none!important;clear:none!important;transform:none!important;opacity:1!important;visibility:visible!important;overflow:visible!important;box-shadow:none!important;background:transparent!important;color:#d7dce5!important;direction:ltr!important;text-align:left!important;unicode-bidi:isolate!important;letter-spacing:normal!important;white-space:normal!important;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace!important}
+#zap-dbg-host *,#zap-dbg-host *::before,#zap-dbg-host *::after{box-sizing:border-box!important;animation:none!important;transition:none!important;text-shadow:none!important;text-transform:none!important;float:none!important;letter-spacing:normal!important}
+#zap-dbg-host[data-hidden="1"]{display:none!important}
+#zap-dbg-host zap-dbg-root{display:block!important;width:100%!important;margin:0!important;padding:0!important;background:transparent!important}
+#zap-dbg-host zap-dbg-bar{display:flex!important;align-items:center!important;gap:0!important;flex-wrap:nowrap!important;width:100%!important;height:34px!important;min-height:34px!important;max-height:34px!important;margin:0!important;padding:0!important;background:#1b1f27!important;color:#d7dce5!important;border-top:1px solid #333a48!important;overflow:hidden!important}
+#zap-dbg-host zap-dbg-brand{display:inline-flex!important;align-items:center!important;flex:0 0 auto!important;height:34px!important;padding:0 10px!important;background:#2b3442!important;color:#7ee2b8!important;font-weight:700!important;border-right:1px solid #333a48!important;white-space:nowrap!important;cursor:default!important}
+#zap-dbg-host zap-dbg-chips{display:flex!important;align-items:center!important;flex:1 1 auto!important;min-width:0!important;height:34px!important;padding:0 8px!important;overflow:hidden!important}
+#zap-dbg-host zap-dbg-chip{display:inline-block!important;flex:0 0 auto!important;height:22px!important;line-height:21px!important;padding:0 9px!important;margin:0 6px 0 0!important;background:#262c37!important;border:1px solid #39424f!important;border-radius:3px!important;color:#cfd6e2!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;font-size:11px!important}
+#zap-dbg-host zap-dbg-chip.is-alert{background:#4a2226!important;border-color:#a34148!important;color:#ffb3b8!important}
+#zap-dbg-host zap-dbg-chip.is-path{max-width:260px!important}
+#zap-dbg-host zap-dbg-dim{display:inline!important;color:#8b95a5!important;font-size:11px!important}
+#zap-dbg-host zap-dbg-tabs{display:flex!important;align-items:center!important;flex:0 0 auto!important;height:34px!important;border-left:1px solid #333a48!important}
+#zap-dbg-host zap-dbg-tab{display:inline-block!important;height:34px!important;line-height:34px!important;padding:0 10px!important;margin:0!important;color:#9fb3c8!important;background:transparent!important;border:0!important;border-right:1px solid #333a48!important;cursor:pointer!important;white-space:nowrap!important;user-select:none!important}
+#zap-dbg-host zap-dbg-tab:hover{background:#2b3442!important;color:#fff!important}
+#zap-dbg-host zap-dbg-tab[data-active="1"]{background:#39485c!important;color:#fff!important}
+#zap-dbg-host zap-dbg-actions{display:flex!important;align-items:center!important;flex:0 0 auto!important;height:34px!important}
+#zap-dbg-host zap-dbg-btn{display:inline-block!important;width:30px!important;height:34px!important;line-height:34px!important;text-align:center!important;color:#8b95a5!important;background:transparent!important;border:0!important;border-left:1px solid #333a48!important;cursor:pointer!important;user-select:none!important}
+#zap-dbg-host zap-dbg-btn:hover{background:#3a4351!important;color:#fff!important}
+#zap-dbg-host zap-dbg-panel{display:none!important;width:100%!important;max-height:46vh!important;overflow:auto!important;background:#11151c!important;color:#d7dce5!important;border-top:1px solid #39424f!important;padding:8px 12px 14px!important;margin:0!important}
+#zap-dbg-host zap-dbg-root[data-open="1"] zap-dbg-panel{display:block!important}
+#zap-dbg-host zap-dbg-section{display:none!important}
+#zap-dbg-host zap-dbg-root[data-active="request"] zap-dbg-section[data-name="request"],
+#zap-dbg-host zap-dbg-root[data-active="messages"] zap-dbg-section[data-name="messages"],
+#zap-dbg-host zap-dbg-root[data-active="sql"] zap-dbg-section[data-name="sql"],
+#zap-dbg-host zap-dbg-root[data-active="config"] zap-dbg-section[data-name="config"],
+#zap-dbg-host zap-dbg-root[data-active="files"] zap-dbg-section[data-name="files"]{display:block!important}
+#zap-dbg-host zap-dbg-title{display:block!important;margin:12px 0 6px!important;padding:0 0 4px!important;color:#7ee2b8!important;font-weight:700!important;border-bottom:1px solid #2a3140!important}
+#zap-dbg-host zap-dbg-row{display:flex!important;align-items:flex-start!important;padding:2px 0!important;margin:0!important;border-bottom:1px dotted #222a36!important}
+#zap-dbg-host zap-dbg-k{display:block!important;flex:0 0 200px!important;max-width:200px!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;padding:0 10px 0 0!important;margin:0!important;color:#8fa3bd!important}
+#zap-dbg-host zap-dbg-v{display:block!important;flex:1 1 auto!important;min-width:0!important;padding:0!important;margin:0!important;word-break:break-all!important;white-space:pre-wrap!important;color:#e3e8f0!important}
+#zap-dbg-host zap-dbg-empty{display:block!important;padding:10px 0!important;color:#8b95a5!important}
+#zap-dbg-host zap-dbg-msg{display:block!important;margin:0 0 6px!important;padding:6px 10px!important;background:#1b202a!important;border:0!important;border-left:3px solid #4a5568!important;border-radius:3px!important}
+#zap-dbg-host zap-dbg-msg.lv-warning,#zap-dbg-host zap-dbg-msg.lv-error{border-left-color:#e0575b!important}
+#zap-dbg-host zap-dbg-msg.lv-notice{border-left-color:#e0b050!important}
+#zap-dbg-host zap-dbg-msg.lv-log{border-left-color:#5b9bd5!important}
+#zap-dbg-host zap-dbg-msg-head{display:block!important;margin:0 0 3px!important;color:#f0b9bc!important;font-weight:700!important}
+#zap-dbg-host zap-dbg-msg-body{display:block!important;word-break:break-all!important;white-space:pre-wrap!important;color:#e8ecf2!important}
+#zap-dbg-host zap-dbg-msg-file{display:block!important;margin:3px 0 0!important;color:#8290a4!important;font-size:11px!important;word-break:break-all!important}
+#zap-dbg-host zap-dbg-badge{display:inline-block!important;padding:0 5px!important;margin:0 4px!important;background:#5a2a2e!important;color:#ffd9db!important;border-radius:8px!important;font-size:10px!important}
+#zap-dbg-host zap-dbg-sql{display:flex!important;align-items:flex-start!important;gap:8px!important;padding:4px 0!important;margin:0!important;border-bottom:1px dotted #222a36!important}
+#zap-dbg-host zap-dbg-sql-n{display:block!important;flex:0 0 34px!important;color:#8fa3bd!important}
+#zap-dbg-host zap-dbg-sql-body{display:block!important;flex:1 1 auto!important;min-width:0!important}
+#zap-dbg-host zap-dbg-sql-body code{display:block!important;padding:0!important;margin:0!important;background:transparent!important;border:0!important;color:#9fe0c2!important;font-family:inherit!important;font-size:12px!important;word-break:break-all!important;white-space:pre-wrap!important}
+#zap-dbg-host zap-dbg-sql-params{display:block!important;color:#c9a86a!important;font-size:11px!important;word-break:break-all!important}
+#zap-dbg-host zap-dbg-peek{display:none!important;position:fixed!important;right:8px!important;bottom:8px!important;z-index:2147483647!important;padding:4px 9px!important;margin:0!important;background:#2b3442!important;color:#7ee2b8!important;border:1px solid #4b5b70!important;border-radius:4px!important;cursor:pointer!important;font-size:11px!important;box-shadow:0 2px 8px rgba(0,0,0,.45)!important}
+#zap-dbg-host zap-dbg-root[data-min="1"] zap-dbg-bar,
+#zap-dbg-host zap-dbg-root[data-min="1"] zap-dbg-panel{display:none!important}
+#zap-dbg-host zap-dbg-root[data-min="1"] zap-dbg-peek{display:block!important}
+</style>
+<div id="zap-dbg-host">
+  <zap-dbg-root>
+    <zap-dbg-peek id="zap-dbg-peek" title="展开调试条">ZAP DEBUG</zap-dbg-peek>
+    <zap-dbg-panel id="zap-dbg-panel">{{SECTIONS}}</zap-dbg-panel>
+    <zap-dbg-bar>
+      <zap-dbg-brand title="ZAP Debug Bar">ZAP DEBUG</zap-dbg-brand>
+      <zap-dbg-chips>{{CHIPS}}</zap-dbg-chips>
+      <zap-dbg-tabs>{{TABS}}</zap-dbg-tabs>
+      <zap-dbg-actions>
+        <zap-dbg-btn id="zap-dbg-min" title="最小化">&#8722;</zap-dbg-btn>
+        <zap-dbg-btn id="zap-dbg-close" title="隐藏调试条">&#215;</zap-dbg-btn>
+      </zap-dbg-actions>
+    </zap-dbg-bar>
+  </zap-dbg-root>
+</div>
+<script>
+(function () {
+    var host = document.getElementById('zap-dbg-host');
+    if (!host) { return; }
+    var root = host.querySelector('zap-dbg-root');
+    var tabs = host.querySelectorAll('zap-dbg-tab');
+    if (!root) { return; }
+
+    function closePanel() {
+        root.removeAttribute('data-open');
+        root.removeAttribute('data-active');
+        for (var i = 0; i < tabs.length; i++) { tabs[i].removeAttribute('data-active'); }
+    }
+
+    function openPanel(name) {
+        root.setAttribute('data-active', name);
+        root.setAttribute('data-open', '1');
+        for (var i = 0; i < tabs.length; i++) {
+            if (tabs[i].getAttribute('data-target') === name) {
+                tabs[i].setAttribute('data-active', '1');
+            } else {
+                tabs[i].removeAttribute('data-active');
+            }
+        }
+    }
+
+    for (var k = 0; k < tabs.length; k++) {
+        (function (tab) {
+            tab.addEventListener('click', function () {
+                var name = tab.getAttribute('data-target');
+                if (root.getAttribute('data-open') === '1' && tab.getAttribute('data-active') === '1') {
+                    closePanel();
+                } else {
+                    openPanel(name);
+                }
+            });
+        })(tabs[k]);
+    }
+
+    var min = document.getElementById('zap-dbg-min');
+    if (min) {
+        min.addEventListener('click', function () {
+            closePanel();
+            root.setAttribute('data-min', '1');
+        });
+    }
+    var peek = document.getElementById('zap-dbg-peek');
+    if (peek) {
+        peek.addEventListener('click', function () { root.removeAttribute('data-min'); });
+    }
+    var close = document.getElementById('zap-dbg-close');
+    if (close) {
+        close.addEventListener('click', function () { host.setAttribute('data-hidden', '1'); });
+    }
+})();
+</script>

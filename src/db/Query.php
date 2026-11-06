@@ -1,0 +1,1478 @@
+<?php
+
+namespace zap\db;
+
+use zap\helpers\Pagination;
+
+class Query
+{
+    // Fetch mode constants
+    const FETCH_ASSOC  = 2;
+    const FETCH_OBJ    = 5;
+    const FETCH_COLUMN = 7;
+    const FETCH_KEY_PAIR = 12;
+
+    /**
+     * Distinct select.
+     */
+    protected $distinct = false;
+
+    /**
+     * The columns to be returned.
+     */
+    protected $columns = [];
+
+    /**
+     * 绑定参数命名计数器（嵌套子查询共享，避免同名占位符冲突）。
+     */
+    protected int $bindIndex = 0;
+
+    /**
+     * The table the query is targeting.
+     */
+    protected $from = '';
+
+    /**
+     * WHERE constraints.
+     */
+    protected $wheres = [];
+
+    /**
+     * HAVING constraints.
+     */
+    protected $havings = [];
+
+    /**
+     * ORDER BY clauses.
+     */
+    protected $orders = [];
+
+    /**
+     * GROUP BY clauses.
+     */
+    protected $groups = [];
+
+    /**
+     * JOIN clauses.
+     */
+    protected $joins = [];
+
+    /**
+     * The query UNION statements.
+     */
+    protected $unions = [];
+
+    /**
+     * Table alias.
+     */
+    protected $alias = '';
+
+    /**
+     * Known raw table names (before prefix) for distinguishing table names from aliases.
+     */
+    protected $knownTables = [];
+
+    /**
+     * LIMIT value.
+     */
+    protected $limit = null;
+
+    /**
+     * OFFSET value.
+     */
+    protected $offset = null;
+
+    /**
+     * Bind parameters.
+     */
+    protected $params = [];
+
+    /**
+     * SET fields for UPDATE.
+     */
+    protected $fields = [];
+
+    /**
+     * Database connection instance.
+     *
+     * @var ZPDO
+     */
+    protected $db;
+
+    /**
+     * Select type (SELECT, INSERT, UPDATE, DELETE).
+     */
+    protected $type = 'select';
+
+    /** @var array Cached where bind values for logging */
+    protected $bindings = [];
+
+    public function __construct($db = null, string $from = '', string $alias = '')
+    {
+        if ($db instanceof ZPDO) {
+            $this->db = $db;
+        }
+        $this->from = $from;
+        if ($from) {
+            $this->knownTables[] = $from;
+        }
+        if ($alias) {
+            $this->alias = $alias;
+        }
+    }
+
+    /**
+     * Create a new query instance.
+     */
+    public static function query($db = null, string $from = '', string $alias = ''): self
+    {
+        return new self($db, $from, $alias);
+    }
+
+    // ─── Select / From ────────────────────────────────────────
+
+    public function select(...$columns): self
+    {
+        $this->type    = 'select';
+        $this->columns = $this->normaliseColumns($columns);
+
+        return $this;
+    }
+
+    public function addSelect(...$columns): self
+    {
+        $this->columns = array_merge($this->columns, $this->normaliseColumns($columns));
+
+        return $this;
+    }
+
+    /**
+     * 展开 select 参数：支持数组，以及 "a,b" 形式的逗号分隔列。
+     */
+    private function normaliseColumns(array $columns): array
+    {
+        $result = [];
+        foreach ($columns as $column) {
+            if (is_array($column)) {
+                $result = array_merge($result, $this->normaliseColumns($column));
+                continue;
+            }
+            if (!is_string($column)) {
+                $result[] = $column;
+                continue;
+            }
+            foreach ($this->splitColumnList($column) as $item) {
+                $result[] = $item;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * 按顶层逗号拆分列清单（括号内的逗号不拆分，如 count(a,b)）。
+     */
+    private function splitColumnList(string $columns): array
+    {
+        if (strpos($columns, ',') === false) {
+            $trimmed = trim($columns);
+
+            return $trimmed === '' ? [] : [$trimmed];
+        }
+
+        $parts = [];
+        $depth = 0;
+        $buffer = '';
+        $length = strlen($columns);
+
+        for ($i = 0; $i < $length; $i++) {
+            $ch = $columns[$i];
+
+            if ($ch === '(') {
+                $depth++;
+            } elseif ($ch === ')') {
+                $depth = max(0, $depth - 1);
+            }
+
+            if ($ch === ',' && $depth === 0) {
+                $parts[] = trim($buffer);
+                $buffer  = '';
+                continue;
+            }
+
+            $buffer .= $ch;
+        }
+
+        $parts[] = trim($buffer);
+
+        return array_values(array_filter($parts, static fn($v) => $v !== ''));
+    }
+
+    public function distinct(): self
+    {
+        $this->distinct = true;
+
+        return $this;
+    }
+
+    public function from(string $table, string $alias = ''): self
+    {
+        $this->from = $table;
+        $this->knownTables[] = $table;
+        if ($alias) {
+            $this->alias = $alias;
+        }
+
+        return $this;
+    }
+
+    // ─── Where Clauses ─────────────────────────────────────────
+
+    /**
+     * Add a basic WHERE clause.
+     *
+     * @param string|array|\Closure $column
+     * @param string|null $operator
+     * @param mixed $value
+     * @return $this
+     */
+    public function where($column, $operator = null, $value = null): self
+    {
+        // Allow passing a where array directly
+        if (is_array($column)) {
+            $this->_where($column);
+            return $this;
+        }
+
+        if ($column instanceof \Closure) {
+            $query = new self($this->db, $this->from, $this->alias);
+            $query->bindIndex = $this->bindIndex;
+            $column($query);
+            $this->bindIndex = $query->bindIndex;
+            $this->wheres[] = ['type' => 'nested', 'query' => $query];
+            return $this;
+        }
+
+        if (func_num_args() === 2) {
+            [$value, $operator] = [$operator, '='];
+        }
+
+        return $this->_where([$column => [
+            'operator' => $operator ?? '=',
+            'value'    => $value,
+            'boolean'  => 'AND',
+        ]]);
+    }
+
+    public function orWhere($column, $operator = null, $value = null): self
+    {
+        // Allow passing a where array directly
+        if (is_array($column)) {
+            foreach ($column as $key => $val) {
+                if (is_numeric($key)) {
+                    $this->_where([$val['column'] => [
+                        'operator' => $val['operator'] ?? '=',
+                        'value'    => $val['value'] ?? null,
+                        'boolean'  => 'OR',
+                    ]]);
+                } else {
+                    $this->_where([$key => [
+                        'operator' => '=',
+                        'value'    => $val,
+                        'boolean'  => 'OR',
+                    ]]);
+                }
+            }
+            return $this;
+        }
+
+        if ($column instanceof \Closure) {
+            $query = new self($this->db, $this->from, $this->alias);
+            $query->bindIndex = $this->bindIndex;
+            $column($query);
+            $this->bindIndex = $query->bindIndex;
+            $this->wheres[] = ['type' => 'nested', 'query' => $query, 'boolean' => 'OR'];
+            return $this;
+        }
+
+        if (func_num_args() === 2) {
+            [$value, $operator] = [$operator, '='];
+        }
+
+        return $this->_where([$column => [
+            'operator' => $operator ?? '=',
+            'value'    => $value,
+            'boolean'  => 'OR',
+        ]]);
+    }
+
+    public function whereBetween(string $column, $values, string $boolean = 'AND', bool $not = false): self
+    {
+        $operator = $not ? 'NOT BETWEEN' : 'BETWEEN';
+
+        return $this->_where([$column => [
+            'operator' => $operator,
+            'value'    => (array) $values,
+            'boolean'  => $boolean,
+        ]]);
+    }
+
+    public function whereNotBetween(string $column, $values, string $boolean = 'AND'): self
+    {
+        return $this->whereBetween($column, $values, $boolean, true);
+    }
+
+    public function whereIn(string $column, $values, string $boolean = 'AND', bool $not = false): self
+    {
+        $operator = $not ? 'NOT IN' : 'IN';
+
+        return $this->_where([$column => [
+            'operator' => $operator,
+            'value'    => (array) $values,
+            'boolean'  => $boolean,
+        ]]);
+    }
+
+    public function whereNotIn(string $column, $values, string $boolean = 'AND'): self
+    {
+        return $this->whereIn($column, $values, $boolean, true);
+    }
+
+    public function whereNull(string $column, string $boolean = 'AND', bool $not = false): self
+    {
+        $operator = $not ? 'IS NOT NULL' : 'IS NULL';
+
+        return $this->_where([$column => [
+            'operator' => $operator,
+            'value'    => null,
+            'boolean'  => $boolean,
+        ]]);
+    }
+
+    public function whereNotNull(string $column, string $boolean = 'AND'): self
+    {
+        return $this->whereNull($column, $boolean, true);
+    }
+
+    public function orWhereNull(string $column): self
+    {
+        return $this->whereNull($column, 'OR');
+    }
+
+    public function orWhereNotNull(string $column): self
+    {
+        return $this->whereNull($column, 'OR', true);
+    }
+
+    /**
+     * Compare two columns.
+     */
+    public function whereColumn(string $first, string $operator, ?string $second = null, string $boolean = 'AND'): self
+    {
+        if ($second === null) {
+            [$second, $operator] = [$operator, '='];
+        }
+
+        $col1 = $this->db ? $this->db->quoteColumn($first) : $first;
+        $col2 = $this->db ? $this->db->quoteColumn($second) : $second;
+
+        return $this->_where([$col1 => [
+            'operator' => $operator,
+            'value'    => new Expr($col2),
+            'boolean'  => $boolean,
+        ]]);
+    }
+
+    public function orWhereColumn(string $first, string $operator, ?string $second = null): self
+    {
+        return $this->whereColumn($first, $operator, $second, 'OR');
+    }
+
+    /**
+     * Add a raw WHERE clause with optional bindings.
+     *
+     * @param string $sql    Raw SQL expression (e.g. "a.id = b.id AND status = ?")
+     * @param array  $bindings Values to bind to placeholders
+     * @param string $boolean 'AND' or 'OR'
+     */
+    /**
+     * Add a raw WHERE clause with named bindings.
+     *
+     * Example:
+     *   $q->whereRaw('a.id = b.id');
+     *   $q->whereRaw('status = :status AND hits > :min', ['status' => 1, 'min' => 100]);
+     *
+     * @param string $sql      Raw SQL with :named placeholders
+     * @param array  $bindings ['key' => value] — keys are auto-prefixed with ':' if missing
+     * @param string $boolean  'AND' or 'OR'
+     */
+    public function whereRaw(string $sql, array $bindings = [], string $boolean = 'AND'): self
+    {
+        foreach ($bindings as $key => $value) {
+            $key = ltrim((string) $key, ':');
+            $this->params[$key] = $value;
+        }
+
+        $this->wheres[] = [
+            'sql'     => $sql,
+            'boolean' => $boolean,
+        ];
+
+        return $this;
+    }
+
+    /**
+     * Add a raw OR WHERE clause.
+     */
+    public function orWhereRaw(string $sql, array $bindings = []): self
+    {
+        return $this->whereRaw($sql, $bindings, 'OR');
+    }
+
+    /**
+     * Internal where builder.
+     * Accepts: [colName => [operator, value, boolean]]
+     *
+     * @param array $conditions
+     * @return $this
+     */
+    protected function _where(array $conditions): self
+    {
+        foreach ($conditions as $colName => $condition) {
+            if (!is_array($condition)) {
+                // Simple [col => value] format
+                $condition = [
+                    'operator' => '=',
+                    'value'    => $condition,
+                    'boolean'  => 'AND',
+                ];
+            } elseif (!array_key_exists('operator', $condition) && !array_key_exists('value', $condition)) {
+                // Positional format: [col => [operator, value, boolean]]
+                // e.g. ['title' => ['LIKE', '%foo%', 'AND']]
+                $values    = array_values($condition);
+                $condition = [
+                    'operator' => $values[0] ?? '=',
+                    'value'    => $values[1] ?? null,
+                    'boolean'  => $values[2] ?? 'AND',
+                ];
+            }
+
+            $operator = strtoupper($condition['operator'] ?? '=');
+            $value    = $condition['value'] ?? null;
+            $boolean  = $condition['boolean'] ?? 'AND';
+
+            if ($this->db) {
+                // Support table prefix for table.column references
+                if ($this->db->getTablePrefix() && str_contains($colName, '.')) {
+                    $parts = explode('.', $colName, 2);
+                    // Only prefix if it's a known real table name (not an alias)
+                    if (in_array($parts[0], $this->knownTables, true)) {
+                        $colName = $this->db->quoteTable($parts[0]) . '.' . $this->db->quoteColumn($parts[1]);
+                    } else {
+                        $colName = $this->db->quoteColumn($colName);
+                    }
+                } else {
+                    $colName = $this->db->quoteColumn($colName);
+                }
+            }
+
+            switch ($operator) {
+                case 'IN':
+                case 'NOT IN':
+                    $this->prepareWhereInStatement($colName, $operator, (array) $value, $boolean);
+                    break;
+
+                case 'BETWEEN':
+                case 'NOT BETWEEN':
+                    // Parameterized BETWEEN to prevent SQL injection
+                    $b1 = $this->nextBind('bet1_');
+                    $b2 = $this->nextBind('bet2_');
+                    $values    = (array) $value;
+                    $this->wheres[] = [
+                        'sql'     => "{$colName} {$operator} :{$b1} AND :{$b2}",
+                        'boolean' => $boolean,
+                    ];
+                    $this->params[$b1] = $values[0] ?? null;
+                    $this->params[$b2] = $values[1] ?? null;
+                    break;
+
+                case 'IS NULL':
+                case 'IS NOT NULL':
+                    $this->wheres[] = [
+                        'sql'     => "{$colName} {$operator}",
+                        'boolean' => $boolean,
+                    ];
+                    break;
+
+                default:
+                    if ($value instanceof Expr) {
+                        $this->wheres[] = [
+                            'sql'     => "{$colName} {$operator} {$value->raw}",
+                            'boolean' => $boolean,
+                        ];
+                    } elseif ($value instanceof \Closure) {
+                        $sub = new self($this->db, $this->from, $this->alias);
+                        $sub->bindIndex = $this->bindIndex;
+                        $value($sub);
+                        $this->bindIndex = $sub->bindIndex;
+                        $this->wheres[] = [
+                            'type'    => 'nested',
+                            'query'   => $sub,
+                            'boolean' => $boolean,
+                        ];
+                    } else {
+                        $bind = $this->nextBind('w');
+                        $this->wheres[] = [
+                            'sql'     => "{$colName} {$operator} :{$bind}",
+                            'boolean' => $boolean,
+                        ];
+                        $this->params[$bind] = $value;
+                    }
+                    break;
+            }
+        }
+
+        return $this;
+    }
+
+    // ─── Having ────────────────────────────────────────────────
+
+    public function having(string $column, $operator = null, $value = null, string $boolean = 'AND'): self
+    {
+        if (func_num_args() === 2) {
+            [$value, $operator] = [$operator, '='];
+        }
+
+        $this->havings[] = [
+            'column'   => $column,
+            'operator' => $operator ?? '=',
+            'value'    => $value,
+            'boolean'  => $boolean,
+        ];
+
+        return $this;
+    }
+
+    public function orHaving(string $column, $operator = null, $value = null): self
+    {
+        return $this->having($column, $operator, $value, 'OR');
+    }
+
+    // ─── Group By / Order By ───────────────────────────────────
+
+    public function groupBy(...$columns): self
+    {
+        if (count($columns) === 1 && is_array($columns[0])) {
+            $columns = $columns[0];
+        }
+        $this->groups = array_merge($this->groups, $columns);
+        return $this;
+    }
+
+    public function orderBy(string $column, string $direction = 'ASC'): self
+    {
+        // Support comma-separated multiple order clauses like "col1 ASC,col2 DESC"
+        if (strpos($column, ',') !== false) {
+            foreach (explode(',', $column) as $clause) {
+                $clause = trim($clause);
+                if ($clause !== '') {
+                    // Split "col1 ASC" into column and direction
+                    $parts = preg_split('/\s+/', $clause, 2);
+                    $col = $parts[0];
+                    $dir = $parts[1] ?? $direction;
+                    $this->orderBy($col, $dir);
+                }
+            }
+            return $this;
+        }
+
+        // Detect if column already includes ASC/DESC suffix
+        $columnTrim = trim($column);
+        if (preg_match('/\s+(ASC|DESC)$/i', $columnTrim, $matches)) {
+            $column = trim(substr($columnTrim, 0, -(strlen($matches[0]))));
+            $direction = strtoupper($matches[1]);
+        } else {
+            $direction = strtoupper($direction);
+            $direction = in_array($direction, ['ASC', 'DESC']) ? $direction : 'ASC';
+        }
+
+        if ($this->db) {
+            $column = $this->db->quoteColumn($column);
+        }
+        $this->orders[] = "{$column} {$direction}";
+        return $this;
+    }
+
+    public function orderByDesc(string $column): self
+    {
+        return $this->orderBy($column, 'DESC');
+    }
+
+    /**
+     * Add a raw ORDER BY clause with optional named bindings.
+     *
+     * Examples:
+     *   $q->orderByRaw('RAND()');
+     *   $q->orderByRaw('FIELD(id, :a, :b, :c)', ['a' => 3, 'b' => 1, 'c' => 2]);
+     *   $q->orderByRaw('(SELECT val FROM t WHERE t.pid=n.id AND t.key=:k LIMIT 1) DESC', ['k' => 'rating']);
+     *
+     * @param string $expression Raw SQL (e.g. subquery, function call)
+     * @param array  $bindings   Named bindings ['key' => value], keys auto-prefixed with ':'
+     */
+    public function orderByRaw(string $expression, array $bindings = []): self
+    {
+        foreach ($bindings as $key => $value) {
+            $key = ltrim((string) $key, ':');
+            $this->params[$key] = $value;
+        }
+        $this->orders[] = $expression;
+        return $this;
+    }
+
+    public function latest(string $column = 'id'): self
+    {
+        return $this->orderBy($column, 'DESC');
+    }
+
+    public function oldest(string $column = 'id'): self
+    {
+        return $this->orderBy($column, 'ASC');
+    }
+
+    public function inRandomOrder(): self
+    {
+        if ($this->db && ($this->db->driver === 'mysql' || $this->db->driver === 'mariadb')) {
+            $this->orders[] = 'RAND()';
+        } else {
+            $this->orders[] = 'RANDOM()';
+        }
+        return $this;
+    }
+
+    public function reorder(string $column = 'id', string $direction = 'ASC'): self
+    {
+        $this->orders = [];
+        return $this->orderBy($column, $direction);
+    }
+
+    // ─── Join ──────────────────────────────────────────────────
+
+    public function join($table, $alias = '', $on = '', string $type = 'INNER'): self
+    {
+        // Support old API: join(['table', 'alias'], $on)
+        // In old API, second argument is the ON condition (not an alias)
+        if (is_array($table)) {
+            $on    = $alias !== '' ? (string)$alias : $on;
+            $alias = $table[1] ?? '';
+            $table = $table[0];
+        }
+
+        // Detect when $alias is actually an ON condition (contains =)
+        if (is_string($alias) && $alias !== '' && $on === '' && str_contains($alias, '=')) {
+            $on    = $alias;
+            $alias = '';
+        }
+
+        $rawJoinTable = $table; // Save original table name before quoting
+        $this->knownTables[] = $rawJoinTable;
+        if ($this->db) {
+            $table = $this->db->quoteTable($table);
+        }
+
+        $clause = "{$type} JOIN {$table}";
+        if ($alias) {
+            $clause .= " AS {$alias}";
+        }
+        if ($on) {
+            // Wrap table names in ON condition with {} for prefix support via prepareSQL()
+            if ($this->db && $this->db->getTablePrefix()) {
+                // Replace known table references: FROM table and JOINED table
+                $on = preg_replace('/\b' . preg_quote($this->from, '/') . '\./', '{' . $this->from . '}.', $on);
+                if (is_string($rawJoinTable)) {
+                    $on = preg_replace('/\b' . preg_quote($rawJoinTable, '/') . '\./', '{' . $rawJoinTable . '}.', $on);
+                }
+            }
+            $clause .= " ON {$on}";
+        }
+
+        $this->joins[] = $clause;
+        return $this;
+    }
+
+    public function leftJoin($table, $alias = '', $on = ''): self
+    {
+        return $this->join($table, $alias, $on, 'LEFT');
+    }
+
+    public function rightJoin($table, $alias = '', $on = ''): self
+    {
+        return $this->join($table, $alias, $on, 'RIGHT');
+    }
+
+    public function crossJoin(string $table, string $alias = ''): self
+    {
+        return $this->join($table, $alias, '', 'CROSS');
+    }
+
+    // ─── Union ─────────────────────────────────────────────────
+
+    public function union(Query $query, bool $all = false): self
+    {
+        $this->unions[] = ['query' => $query, 'all' => $all];
+        return $this;
+    }
+
+    public function unionAll(Query $query): self
+    {
+        return $this->union($query, true);
+    }
+
+    // ─── Limit / Offset / Paginate ─────────────────────────────
+
+    /**
+     * 设置 LIMIT
+     *
+     * @param int      $value  返回条数
+     * @param int|null $offset 偏移量；调用方写成 limit($size, $offset) 时也能正确生效
+     */
+    public function limit($value, $offset = null): self
+    {
+        $this->limit = (int) $value;
+
+        if ($offset !== null) {
+            $this->offset($offset);
+        }
+
+        return $this;
+    }
+
+    public function offset($value): self
+    {
+        $this->offset = max(0, (int) $value);
+        return $this;
+    }
+
+    public function take(int $value): self
+    {
+        return $this->limit($value);
+    }
+
+    public function skip(int $value): self
+    {
+        return $this->offset($value);
+    }
+
+    /**
+     * Execute a paginated query and return a Pagination instance.
+     */
+    public function paginate(int $perPage = 15, ?int $page = null): Pagination
+    {
+        $page = $page ?: (int) ($_GET['page'] ?? 1);
+        $page = max(1, $page);
+
+        $total = $this->count();
+        $pagination = Pagination::make($total, $perPage, $page);
+
+        $offset = $pagination->offset();
+        $this->limit($perPage)->offset($offset);
+
+        $items = $this->get();
+        $pagination->setTotal($total);
+
+        return $pagination;
+    }
+
+    // ─── Insert / Update / Delete ──────────────────────────────
+
+    /**
+     * Insert a new record.
+     */
+    public function insert(array $data)
+    {
+        if ($this->db) {
+            return $this->db->insert($this->from, $data);
+        }
+
+        $names        = [];
+        $placeholders = [];
+        $params       = [];
+
+        foreach ($data as $name => $value) {
+            $names[] = $name;
+            if ($value instanceof Expr) {
+                $placeholders[] = $value->raw;
+            } else {
+                $bind = ':i' . count($params);
+                $placeholders[] = $bind;
+                $params[$bind] = $value;
+            }
+        }
+
+        $sql = 'INSERT INTO ' . $this->from
+            . ' (' . implode(', ', $names) . ') VALUES ('
+            . implode(', ', $placeholders) . ')';
+
+        $this->type = 'insert';
+
+        $stm = $this->db->prepare($sql);
+        $stm->execute($params);
+        return $this->db->lastInsertId();
+    }
+
+    /**
+     * Set fields for UPDATE query.
+     * Supports: set($key, $value) or set(['key' => 'value', ...])
+     */
+    public function set($params, $value = null): self
+    {
+        $this->type = 'update';
+
+        if ($value !== null) {
+            $params = [$params => $value];
+        }
+
+        if ($this->db) {
+            foreach ((array)$params as $name => $param) {
+                if ($param instanceof Expr) {
+                    $this->fields[] = $this->db->quoteColumn($name) . '=' . $param->raw;
+                } else {
+                    $this->params[$name] = $param;
+                    $this->fields[] = $this->db->quoteColumn($name) . '=:' . $name;
+                }
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * Delete records.
+     */
+    public function delete($id = null): int
+    {
+        $this->type = 'delete';
+
+        if ($id !== null) {
+            $this->where('id', '=', $id);
+        }
+
+        $deleteSQL = $this->getSQL();
+        $stm = $this->db->prepare($deleteSQL);
+        $stm->execute($this->params);
+
+        return $stm->rowCount();
+    }
+
+    public function insertGetId(array $data)
+    {
+        return $this->insert($data);
+    }
+
+    public function insertOrIgnore(array $data): bool
+    {
+        $names        = [];
+        $placeholders = [];
+        $params       = [];
+
+        foreach ($data as $name => $value) {
+            $names[] = $this->db ? $this->db->quoteColumn($name) : $name;
+            if ($value instanceof Expr) {
+                $placeholders[] = $value->raw;
+            } else {
+                $bind = '_ii' . count($params);
+                $placeholders[] = ':' . $bind;
+                $params[$bind] = $value;
+            }
+        }
+
+        $prefix = ($this->db && ($this->db->driver === 'mysql' || $this->db->driver === 'mariadb'))
+            ? 'INSERT IGNORE INTO ' : 'INSERT OR IGNORE INTO ';
+
+        $sql = $prefix . ($this->db ? $this->db->quoteTable($this->from) : $this->from)
+            . ' (' . implode(', ', $names) . ') VALUES ('
+            . implode(', ', $placeholders) . ')';
+
+        $stm = $this->db->prepare($sql);
+        return $stm->execute($params);
+    }
+
+    // ─── Execution ─────────────────────────────────────────────
+
+    public function get(int $fetchMode = self::FETCH_ASSOC): array
+    {
+        $sql = $this->getSQL();
+        $stm = $this->db->prepare($sql);
+        $stm->execute($this->params);
+        return $stm->fetchAll($fetchMode);
+    }
+
+    /**
+     * Fetch all results with the given fetch mode.
+     */
+    public function fetchAll(int $fetchMode = self::FETCH_ASSOC): array
+    {
+        return $this->get($fetchMode);
+    }
+
+    /**
+     * Fetch a single record.
+     */
+    public function fetch(int $fetchMode = self::FETCH_ASSOC)
+    {
+        $this->limit(1);
+        $results = $this->get($fetchMode);
+        return $results[0] ?? null;
+    }
+
+    public function first()
+    {
+        $result = $this->limit(1)->get();
+        return $result[0] ?? null;
+    }
+
+    public function find($id)
+    {
+        return $this->where('id', '=', $id)->first();
+    }
+
+    /**
+     * Fetch the first column of the first row as a scalar value.
+     */
+    public function fetchColumn(int $columnIndex = 0)
+    {
+        $sql = $this->getSQL();
+        $stm = $this->db->prepare($sql);
+        $stm->execute($this->params);
+        return $stm->fetchColumn($columnIndex);
+    }
+
+    /**
+     * Get a single column's value from the first result.
+     */
+    public function value(string $column)
+    {
+        $result = $this->first();
+        if ($result) {
+            return $result->{$column} ?? $result[$column] ?? null;
+        }
+        return null;
+    }
+
+    /**
+     * Get an array of values for a single column.
+     */
+    public function pluck(string $column, ?string $key = null): array
+    {
+        $this->columns = $key ? [$key, $column] : [$column];
+        $results = $this->get();
+
+        if ($key) {
+            $plucked = [];
+            foreach ($results as $result) {
+                $keyVal = is_object($result) ? $result->{$key} : $result[$key];
+                $plucked[$keyVal] = is_object($result) ? $result->{$column} : $result[$column];
+            }
+            return $plucked;
+        }
+
+        return array_map(function ($result) use ($column) {
+            return is_object($result) ? $result->{$column} : $result[$column];
+        }, $results);
+    }
+
+    public function count(string $column = '*'): int
+    {
+        $clone          = clone $this;
+        $clone->columns = [];
+        $clone->orders  = [];
+        $clone->limit   = null;
+        $clone->offset  = null;
+
+        $clone->type = 'select';
+        $sql = $clone->getSQL();
+
+        // Build COUNT SQL manually
+        $select = 'SELECT COUNT(' . ($column !== '*' ? $column : '*') . ') AS _count';
+        $fromPos = stripos($sql, 'FROM');
+        $countSQL = $fromPos !== false ? $select . ' ' . substr($sql, $fromPos) : $select . ' ' . $sql;
+
+        // Remove ORDER BY for efficiency
+        $orderPos = stripos($countSQL, 'ORDER BY');
+        if ($orderPos !== false) {
+            $countSQL = substr($countSQL, 0, $orderPos);
+        }
+
+        // Remove UNION sections for count (only count first query)
+        $unionPos = stripos($countSQL, 'UNION');
+        if ($unionPos !== false) {
+            $countSQL = substr($countSQL, 0, $unionPos);
+        }
+
+        $stm = $this->db->prepare($countSQL);
+        $stm->execute($clone->params);
+        return (int) $stm->fetchColumn();
+    }
+
+    public function exists(): bool
+    {
+        return $this->count() > 0;
+    }
+
+    public function doesntExist(): bool
+    {
+        return !$this->exists();
+    }
+
+    public function increment(string $column, int $amount = 1, array $extra = []): int
+    {
+        $extra[$column] = new Expr($column . ' + ' . $amount);
+        $this->type = 'update';
+        return $this->updateQuery($extra);
+    }
+
+    public function decrement(string $column, int $amount = 1, array $extra = []): int
+    {
+        $extra[$column] = new Expr($column . ' - ' . $amount);
+        $this->type = 'update';
+        return $this->updateQuery($extra);
+    }
+
+    /**
+     * Execute an UPDATE query. Supports two patterns:
+     *  - Chained:   ->set('col', val)->set('col2', val2)->where(...)->update()
+     *  - Direct:    ->where(...)->update(['col' => val])
+     */
+    public function update(?array $data = null): int
+    {
+        $this->type = 'update';
+
+        if ($data !== null) {
+            return $this->updateQuery($data);
+        }
+
+        if (empty($this->fields)) {
+            return 0;
+        }
+
+        $sql = 'UPDATE ' . ($this->db ? $this->db->quoteTable($this->from) : $this->from);
+        $sql .= ' SET ' . implode(', ', $this->fields);
+        $sql .= $this->prepareWhereString();
+        $sql .= $this->prepareLimitString();
+        $sql .= $this->prepareOrderString();
+
+        $stm = $this->db->prepare($sql);
+        $stm->execute($this->params);
+        return $stm->rowCount();
+    }
+
+    /**
+     * Execute an update query via the Query builder.
+     */
+    protected function updateQuery(array $data): int
+    {
+        $setClauses = [];
+        foreach ($data as $name => $value) {
+            if ($value instanceof Expr) {
+                $setClauses[] = ($this->db ? $this->db->quoteColumn($name) : $name) . '=' . $value->raw;
+            } else {
+                $bind = '_upd' . count($this->params);
+                $setClauses[] = ($this->db ? $this->db->quoteColumn($name) : $name) . '=:' . $bind;
+                $this->params[$bind] = $value;
+            }
+        }
+
+        $sql = 'UPDATE ' . ($this->db ? $this->db->quoteTable($this->from) : $this->from)
+            . ' SET ' . implode(', ', $setClauses);
+
+        if (!empty($this->wheres)) {
+            $sql .= ' WHERE ' . $this->prepareWheres();
+        }
+
+        $stm = $this->db->prepare($sql);
+        $stm->execute($this->params);
+        return $stm->rowCount();
+    }
+
+    /**
+     * Aggregate functions.
+     */
+    public function max(string $column)
+    {
+        return $this->aggregate('MAX', $column);
+    }
+
+    public function min(string $column)
+    {
+        return $this->aggregate('MIN', $column);
+    }
+
+    public function sum(string $column)
+    {
+        return $this->aggregate('SUM', $column);
+    }
+
+    public function avg(string $column)
+    {
+        return $this->aggregate('AVG', $column);
+    }
+
+    protected function aggregate(string $function, string $column)
+    {
+        $clone          = clone $this;
+        $clone->columns = [];
+        $clone->orders  = [];
+        $clone->limit   = null;
+        $clone->offset  = null;
+
+        $clone->type = 'select';
+        $sql = $clone->getSQL();
+
+        $selectExpr = "SELECT {$function}({$column}) AS _aggregate";
+        $fromPos = stripos($sql, 'FROM');
+        $aggSQL = $fromPos !== false ? $selectExpr . ' ' . substr($sql, $fromPos) : $selectExpr . ' ' . $sql;
+
+        $stm = $this->db->prepare($aggSQL);
+        $stm->execute($clone->params);
+        return $stm->fetchColumn();
+    }
+
+    // ─── Chunking ──────────────────────────────────────────────
+
+    /**
+     * Process results in chunks to avoid memory issues.
+     */
+    public function chunk(int $size, callable $callback): bool
+    {
+        $page = 1;
+
+        do {
+            $clone  = clone $this;
+            $clone->limit($size)->offset(($page - 1) * $size);
+            $results = $clone->get();
+
+            $count = count($results);
+
+            if ($count === 0) {
+                break;
+            }
+
+            if ($callback($results, $page) === false) {
+                return false;
+            }
+
+            $page++;
+        } while ($count === $size);
+
+        return true;
+    }
+
+    /**
+     * Process results one by one.
+     */
+    public function each(callable $callback): bool
+    {
+        return $this->chunk(100, function ($results) use ($callback) {
+            foreach ($results as $key => $value) {
+                if ($callback($value, $key) === false) {
+                    return false;
+                }
+            }
+            return true;
+        });
+    }
+
+    /**
+     * Execute the query and get an array result.
+     */
+    public function toArray(): array
+    {
+        return $this->get();
+    }
+
+    /**
+     * Execute the query and get JSON result.
+     */
+    public function toJson(int $options = JSON_UNESCAPED_UNICODE): string
+    {
+        return json_encode($this->get(), $options);
+    }
+
+    // ─── SQL Building ──────────────────────────────────────────
+
+    public function getSQL(): string
+    {
+        $query = '';
+        switch ($this->type) {
+            case 'select':
+                $query = $this->prepareSelectString() . $this->prepareFrom()
+                    . $this->prepareJoinString()
+                    . $this->prepareWhereString()
+                    . $this->prepareGroupByString()
+                    . $this->prepareOrderString()
+                    . $this->prepareLimitString()
+                    . $this->prepareUnionString();
+                break;
+
+            case 'update':
+                $query = 'UPDATE ' . $this->prepareFrom();
+                if (!empty($this->fields)) {
+                    $query .= ' SET ' . implode(', ', $this->fields);
+                }
+                $query .= $this->prepareWhereString()
+                    . $this->prepareOrderString()
+                    . $this->prepareLimitString();
+                break;
+
+            case 'delete':
+                $query = 'DELETE FROM ' . $this->prepareFrom();
+                if ($this->alias) {
+                    $query .= ' AS ' . $this->alias;
+                }
+                $query .= $this->prepareWhereString()
+                    . $this->prepareOrderString()
+                    . $this->prepareLimitString();
+                break;
+
+            case 'insert':
+                // Handled separately in insert() method
+                break;
+        }
+
+        return $query;
+    }
+
+    /**
+     * Get raw SQL with actual values substituted (for debugging only, not safe).
+     */
+    public function toSql(): string
+    {
+        $sql = $this->getSQL();
+
+        foreach ($this->params as $key => $value) {
+            $sql = str_replace(
+                ':' . $key,
+                is_numeric($value) ? $value : "'" . addslashes((string) $value) . "'",
+                $sql
+            );
+        }
+
+        return $sql;
+    }
+
+    /**
+     * Get all current bindings.
+     */
+    public function getBindings(): array
+    {
+        return $this->params;
+    }
+
+    /**
+     * Dump SQL with bindings for debugging.
+     */
+    public function dd(): void
+    {
+        echo $this->toSql() . PHP_EOL;
+        die;
+    }
+
+    /**
+     * Dump SQL without dying.
+     */
+    public function dump(): self
+    {
+        echo $this->toSql() . PHP_EOL;
+        return $this;
+    }
+
+    // ─── Prepare Query Components ──────────────────────────────
+
+    protected function prepareFrom(): string
+    {
+        $table = $this->db ? $this->db->quoteTable($this->from) : $this->from;
+        if ($this->alias) {
+            $table .= ' AS ' . $this->alias;
+        }
+        return $table;
+    }
+
+    protected function prepareSelectString(): string
+    {
+        $select = $this->distinct ? 'SELECT DISTINCT ' : 'SELECT ';
+        if (count($this->columns) > 0) {
+            $columns = [];
+            foreach ($this->columns as $column) {
+                $columns[] = $this->prepareColumn($column);
+            }
+            $select .= implode(', ', $columns);
+        } else {
+            $select .= '*';
+        }
+        return $select . ' FROM ';
+    }
+
+    /**
+     * 编译单个 SELECT 列。
+     *
+     * 普通列按驱动加引号；函数调用、别名、算术等表达式原样输出，
+     * 否则 MySQL 下会把 "count(id) as total" 整串当成一个标识符加反引号。
+     */
+    protected function prepareColumn($column): string
+    {
+        if ($column instanceof Expr) {
+            return $column->raw;
+        }
+
+        $column = trim((string) $column);
+
+        if ($column === '') {
+            return '*';
+        }
+
+        // 含括号 / 空白 / 星号 / 运算符 → 视为表达式，原样保留
+        if (preg_match('/[()\s*+\-\/%]/', $column)) {
+            return $column;
+        }
+
+        return $this->db ? $this->db->quoteColumn($column) : $column;
+    }
+
+    protected function prepareUnionString(): string
+    {
+        if (empty($this->unions)) {
+            return '';
+        }
+
+        $sql = '';
+        foreach ($this->unions as $union) {
+            $sql .= ($union['all'] ? ' UNION ALL ' : ' UNION ')
+                . '(' . $union['query']->getSQL() . ')';
+            $this->params = array_merge($this->params, $union['query']->getBindings());
+        }
+        return $sql;
+    }
+
+    protected function prepareJoinString(): string
+    {
+        return $this->joins ? ' ' . implode(' ', $this->joins) : '';
+    }
+
+    protected function prepareWhereString(): string
+    {
+        $wheres = $this->prepareWheres();
+        return $wheres ? ' WHERE ' . $wheres : '';
+    }
+
+    protected function prepareWheres(): string
+    {
+        if (empty($this->wheres)) {
+            return '';
+        }
+
+        $whereStatements = [];
+        foreach ($this->wheres as $where) {
+            $bool = strtoupper($where['boolean'] ?? 'AND');
+
+            if (isset($where['type']) && $where['type'] === 'nested') {
+                $nestedWheres = $where['query']->prepareWheres();
+                if ($nestedWheres !== '') {
+                    $prefix = empty($whereStatements) ? '' : " {$bool} ";
+                    $whereStatements[] = $prefix . '(' . $nestedWheres . ')';
+                    $this->params = array_merge($this->params, $where['query']->getBindings());
+                }
+            } elseif (isset($where['sql'])) {
+                $prefix = empty($whereStatements) ? '' : " {$bool} ";
+                $whereStatements[] = $prefix . $where['sql'];
+            }
+        }
+
+        return implode('', $whereStatements);
+    }
+
+    protected function prepareGroupByString(): string
+    {
+        if (empty($this->groups)) {
+            return '';
+        }
+        return ' GROUP BY ' . implode(', ', $this->groups);
+    }
+
+    protected function prepareHavingString(): string
+    {
+        if (empty($this->havings)) {
+            return '';
+        }
+
+        $clauses = [];
+        foreach ($this->havings as $i => $having) {
+            $bool = strtoupper($having['boolean'] ?? 'AND');
+            $prefix = ($i === 0) ? '' : " {$bool} ";
+            $clauses[] = $prefix . $having['column'] . ' ' . $having['operator'] . ' ?';
+            // For having, we add params as positional
+            $this->params['_hav' . $i] = $having['value'];
+            $clauses[count($clauses) - 1] = $prefix . $having['column'] . ' ' . $having['operator'] . ' :_hav' . $i;
+        }
+
+        return ' HAVING ' . implode('', $clauses);
+    }
+
+    protected function prepareOrderString(): string
+    {
+        return $this->orders ? ' ORDER BY ' . implode(', ', $this->orders) : '';
+    }
+
+    protected function prepareLimitString(): string
+    {
+        // Use is_null to properly handle limit(0)
+        if ($this->limit === null) {
+            return '';
+        }
+        $sql = ' LIMIT ' . (int) $this->limit;
+        if ($this->offset !== null && $this->offset > 0) {
+            $sql .= ' OFFSET ' . (int) $this->offset;
+        }
+        return $sql;
+    }
+
+    /**
+     * 生成一个全局唯一的绑定参数名。
+     *
+     * 之前使用 count($params) 计数，嵌套子查询各自从 0 开始，
+     * 合并后同名占位符会被覆盖，MySQL（emulate_prepares=false）会报
+     * "Invalid parameter number"。
+     */
+    protected function nextBind(string $prefix = 'w'): string
+    {
+        return '_' . $prefix . ($this->bindIndex++);
+    }
+
+    protected function prepareWhereInStatement(string $colName, string $operator, array $values, string $boolean): void
+    {
+        if (empty($values)) {
+            // Empty IN () → always false
+            $this->wheres[] = [
+                'sql'     => $operator === 'NOT IN' ? '1=1' : '1=0',
+                'boolean' => $boolean,
+            ];
+            return;
+        }
+
+        $placeholders = [];
+        foreach ($values as $val) {
+            $bind = $this->nextBind('in');
+            $placeholders[] = ':' . $bind;
+            $this->params[$bind] = $val;
+        }
+
+        $this->wheres[] = [
+            'sql'     => "{$colName} {$operator} (" . implode(', ', $placeholders) . ')',
+            'boolean' => $boolean,
+        ];
+    }
+}
+
+// Global fetch mode constants for backward compatibility
+defined('FETCH_ASSOC')   || define('FETCH_ASSOC',   Query::FETCH_ASSOC);
+defined('FETCH_OBJ')     || define('FETCH_OBJ',     Query::FETCH_OBJ);
+defined('FETCH_COLUMN')  || define('FETCH_COLUMN',  Query::FETCH_COLUMN);
+defined('FETCH_KEY_PAIR') || define('FETCH_KEY_PAIR', Query::FETCH_KEY_PAIR);

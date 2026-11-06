@@ -1,0 +1,3 @@
+# 当前为空：框架源码已通过 PHPStan level 3 全量检查。
+# 后续如引入新的存量问题，可运行 `composer analyse -- --generate-baseline` 重新生成。
+parameters: []
