@@ -8,42 +8,45 @@ use zap\util\Str;
 class View
 {
     /** @var string|false 布局模板路径，false 表示无布局 */
-    public $layout = false;
+    public string|false $layout = false;
 
-    /** @var string 视图名称（点分路径如 'users.profile'） */
-    public $viewName;
+    /** @var string|null 视图名称（点分路径如 'users.profile'） */
+    public ?string $viewName = null;
 
-    /** @var string 视图文件的完整磁盘路径 */
-    public $viewFile;
+    /** @var string|null 视图文件的完整磁盘路径 */
+    public ?string $viewFile = null;
 
     /** @var array 模板局部变量 */
-    public $params = [];
+    public array $params = [];
 
     /** @var array 已渲染的块内容 ['blockName' => 'html'] */
-    public $blocks = [];
+    public array $blocks = [];
 
     /** @var array 块栈（用于嵌套 beginBlock/endBlock） */
-    private $_blocksStack = [];
+    private array $_blocksStack = [];
 
     /** @var array 模板搜索路径列表 */
-    protected static $templatePaths = [];
+    protected static array $templatePaths = [];
 
     /** @var array 所有视图实例共享的全局数据 */
-    public static $globalData = [];
+    public static array $globalData = [];
 
     /** @var string[] 支持的模板扩展名 */
-    protected static $extensions = ['php', 'twig', 'html'];
+    protected static array $extensions = ['php', 'twig', 'html'];
+
+    /** @var array 模板解析结果缓存 ['name|exts' => path|null]，避免重复 is_file 探测 */
+    private static array $resolvedCache = [];
 
     /** @var bool 是否已注册 include_path（避免重复修改全局状态） */
-    protected static $includePathRegistered = false;
+    protected static bool $includePathRegistered = false;
 
     /** @var bool 是否启用自动注册 include_path（默认不修改全局状态） */
-    protected static $autoIncludePath = false;
+    protected static bool $autoIncludePath = false;
 
     /**
-     * @var ViewRenderer
+     * @var ViewRenderer|null
      */
-    private $engine;
+    private ?ViewRenderer $engine = null;
 
     /**
      * 构造函数
@@ -52,7 +55,7 @@ class View
      * @param array       $data 模板数据
      * @throws ViewNotFoundException
      */
-    public function __construct($name = null, $data = [])
+    public function __construct(?string $name = null, array $data = [])
     {
         $this->params = $data;
         $this->viewName = $name;
@@ -66,7 +69,7 @@ class View
     /**
      * 静态工厂：从名称和数据创建 View 实例
      */
-    public static function make($name = null, $data = []): View
+    public static function make(?string $name = null, array $data = []): View
     {
         return new View($name, $data);
     }
@@ -91,7 +94,7 @@ class View
      * @param string $name 模板名称
      * @return bool
      */
-    public static function exists($name): bool
+    public static function exists(string $name): bool
     {
         return static::resolveTemplate(static::normalizeName($name)) !== null;
     }
@@ -103,7 +106,7 @@ class View
      * @return string
      * @throws ViewNotFoundException
      */
-    public static function first(...$names): string
+    public static function first(string ...$names): string
     {
         foreach ($names as $name) {
             if (static::exists($name)) {
@@ -123,7 +126,7 @@ class View
      * @param string|null $path 添加路径到列表头部；null 则只读
      * @return array
      */
-    public static function paths($path = null): array
+    public static function paths(?string $path = null): array
     {
         if ($path !== null) {
             static::addPath($path);
@@ -145,7 +148,7 @@ class View
      * @param string $path   模板目录路径
      * @param bool   $append true 追加到末尾 / false 插入到头部（优先级更高）
      */
-    public static function addPath($path = null, $append = false): void
+    public static function addPath(?string $path = null, bool $append = false): void
     {
         if ($path === null || $path === '') {
             return;
@@ -164,6 +167,7 @@ class View
     public static function clearPaths(): void
     {
         static::$templatePaths = [];
+        static::$resolvedCache = [];
     }
 
     /**
@@ -172,7 +176,7 @@ class View
      * @param bool|null $enabled null=只读
      * @return bool
      */
-    public static function autoIncludePath($enabled = null): bool
+    public static function autoIncludePath(?bool $enabled = null): bool
     {
         if ($enabled !== null) {
             static::$autoIncludePath = (bool)$enabled;
@@ -198,7 +202,7 @@ class View
     /**
      * 向所有视图共享数据
      */
-    public static function share($name, $value): void
+    public static function share(string $name, mixed $value): void
     {
         static::$globalData[$name] = $value;
     }
@@ -206,7 +210,7 @@ class View
     /**
      * 向所有视图共享数据（同 share）
      */
-    public static function set($name, $value): void
+    public static function set(string $name, mixed $value): void
     {
         static::$globalData[$name] = $value;
     }
@@ -218,7 +222,7 @@ class View
      *
      * @return $this
      */
-    public function with($key, $value): self
+    public function with(string $key, mixed $value): self
     {
         $this->params[$key] = $value;
         return $this;
@@ -249,22 +253,22 @@ class View
 
     // ───────────────────── 魔术方法 ─────────────────────
 
-    public function __get($name)
+    public function __get(string $name): mixed
     {
         return $this->params[$name] ?? null;
     }
 
-    public function __set($name, $value)
+    public function __set(string $name, mixed $value): void
     {
         $this->params[$name] = $value;
     }
 
-    public function __isset($name)
+    public function __isset(string $name): bool
     {
         return isset($this->params[$name]);
     }
 
-    public function __unset($name)
+    public function __unset(string $name): void
     {
         unset($this->params[$name]);
     }
@@ -285,17 +289,17 @@ class View
      *
      * @param string $layout 布局名
      */
-    public function setLayout($layout): void
+    public function setLayout(string $layout): void
     {
         $this->layout = $this->resolveTemplate($layout, $this->resolveExtensionsForEngine());
     }
 
-    public function layout($layout): void
+    public function layout(string $layout): void
     {
         $this->setLayout($layout);
     }
 
-    public function extend($layout): void
+    public function extend(string $layout): void
     {
         $this->setLayout($layout);
     }
@@ -303,13 +307,14 @@ class View
     /**
      * 包含子模板（在模板内使用）
      */
-    public function include($name, $blockName = '_include'): void
+    public function include(string $name, string $blockName = '_include'): void
     {
         $template = $this->resolveTemplate($name, $this->resolveExtensionsForEngine());
         if ($template === null) {
             return;
         }
-        $this->engine->renderTemplate($template, $blockName);
+        // 直接输出：被包含模板内 beginBlock/endBlock 仍写入同一 View 实例，块捕获能力保留
+        echo $this->engine->renderPartial($template, []);
     }
 
     /**
@@ -319,7 +324,7 @@ class View
      * @param array  $data 额外数据（合并但不会覆盖主视图数据）
      * @return string
      */
-    public function partial($name, array $data = []): string
+    public function partial(string $name, array $data = []): string
     {
         $template = $this->resolveTemplate($name, $this->resolveExtensionsForEngine());
         if ($template === null) {
@@ -333,7 +338,7 @@ class View
     /**
      * 获取块内容
      */
-    public function block($name): string
+    public function block(string $name): string
     {
         return $this->blocks[$name] ?? '';
     }
@@ -341,7 +346,7 @@ class View
     /**
      * 输出块内容（同 block，向后兼容 section 别名）
      */
-    public function section($name): string
+    public function section(string $name): string
     {
         return $this->block($name);
     }
@@ -349,7 +354,7 @@ class View
     /**
      * 开始定义一个块
      */
-    public function beginBlock($name): void
+    public function beginBlock(string $name): void
     {
         ob_start();
         $this->_blocksStack[] = $name;
@@ -372,7 +377,7 @@ class View
      * @param bool $output true=返回字符串, false=直接输出
      * @return string|null
      */
-    public function display($output = false): ?string
+    public function display(bool $output = false): ?string
     {
         return $this->engine->render($output);
     }
@@ -436,7 +441,7 @@ class View
      *
      * @return ViewRenderer
      */
-    public function getEngine()
+    public function getEngine(): ?ViewRenderer
     {
         return $this->engine;
     }
@@ -447,19 +452,28 @@ class View
      * @param string $template 模板名称
      * @return string|null
      */
-    public static function resolveTemplate($template, $extensions = null): ?string
+    public static function resolveTemplate(string $template, ?array $extensions = null): ?string
     {
         $template = static::normalizeName($template);
         $exts = $extensions ?? static::$extensions;
+        $cacheKey = $template . '|' . implode(',', $exts);
+        if (array_key_exists($cacheKey, static::$resolvedCache)) {
+            return static::$resolvedCache[$cacheKey];
+        }
+
+        $found = null;
         foreach (static::$templatePaths as $tplPath) {
             foreach ($exts as $ext) {
                 $tplFullPath = "{$tplPath}/{$template}.{$ext}";
                 if (is_file($tplFullPath)) {
-                    return $tplFullPath;
+                    $found = $tplFullPath;
+                    break 2;
                 }
             }
         }
-        return null;
+
+        static::$resolvedCache[$cacheKey] = $found;
+        return $found;
     }
 
     /**
@@ -483,15 +497,17 @@ class View
      */
     private function registerTemplatePaths(): void
     {
+        // 默认路径始终作为兜底（最低优先级，追加到末尾）
+        $defaultPath = base_path('app/views');
+        if (!in_array($defaultPath, static::$templatePaths, true)) {
+            static::$templatePaths[] = $defaultPath;
+        }
+
+        // 主题路径优先级最高（前置）；主题缺失的模板会回退到默认路径
         if (($theme = config('config.theme', false)) !== false) {
             $themePath = themes_path("$theme");
             if (!in_array($themePath, static::$templatePaths, true)) {
                 array_unshift(static::$templatePaths, $themePath);
-            }
-        } else {
-            $defaultPath = base_path('app/views');
-            if (!in_array($defaultPath, static::$templatePaths, true)) {
-                array_unshift(static::$templatePaths, $defaultPath);
             }
         }
 
@@ -507,8 +523,11 @@ class View
     /**
      * 预处理：解析模板并创建渲染引擎
      */
-    private function prepare($name): void
+    private function prepare(?string $name): void
     {
+        if ($name === null || $name === '') {
+            return;
+        }
         $this->viewFile = static::resolveTemplate($name);
         if ($this->viewFile === null) {
             throw new ViewNotFoundException(
@@ -541,8 +560,19 @@ class View
     /**
      * 标准化模板名称：将点分路径转为目录路径
      */
-    private static function normalizeName($name): string
+    private static function normalizeName(string $name): string
     {
-        return str_replace('.', '/', (string)$name);
+        // 统一分隔符并转点分为目录；剔除 .. 段、空段与绝对路径前缀，防止目录穿越
+        $name = str_replace('\\', '/', (string)$name);
+        $name = str_replace('.', '/', $name);
+
+        $segments = [];
+        foreach (explode('/', $name) as $seg) {
+            if ($seg === '' || $seg === '.' || $seg === '..') {
+                continue;
+            }
+            $segments[] = $seg;
+        }
+        return implode('/', $segments);
     }
 }

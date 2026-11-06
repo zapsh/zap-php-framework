@@ -12,7 +12,7 @@ class PHPRenderer extends ViewRenderer
      * @param bool $output true=返回字符串, false=直接输出
      * @return string|null
      */
-    public function render($output = false)
+    public function render(bool $output = false): ?string
     {
         // 重置块（允许同一实例重复渲染）
         $this->view->blocks = [];
@@ -39,7 +39,7 @@ class PHPRenderer extends ViewRenderer
     /**
      * 渲染指定模板文件并存入块
      */
-    public function renderTemplate($template, $aliasName = 'content'): void
+    public function renderTemplate(string $template, string $aliasName = 'content'): void
     {
         $obLevel = ob_get_level();
         $errorLevel = error_reporting();
@@ -50,8 +50,8 @@ class PHPRenderer extends ViewRenderer
         }
 
         ob_start();
-        extract($this->view->params, EXTR_SKIP);
-        extract(View::$globalData, EXTR_SKIP);
+        // 单次 extract：本地数据优先，全局数据仅填充缺失项（不覆盖本地）
+        extract($this->view->params + View::$globalData, EXTR_SKIP);
 
         try {
             if (!is_file($template)) {
@@ -77,7 +77,7 @@ class PHPRenderer extends ViewRenderer
     /**
      * 渲染局部模板（不存入块，不参与布局）
      */
-    public function renderPartial($template, array $data = []): string
+    public function renderPartial(string $template, array $data = []): string
     {
         $obLevel = ob_get_level();
         $errorLevel = error_reporting();
@@ -86,10 +86,10 @@ class PHPRenderer extends ViewRenderer
             error_reporting($errorLevel & ~E_WARNING);
         }
 
-        $params = array_merge($this->view->params, $data);
+        // 本地数据 + 全局数据（本地优先），再叠加局部 $data（$data 可覆盖）
+        $params = array_merge($this->view->params + View::$globalData, $data);
         ob_start();
         extract($params, EXTR_SKIP);
-        extract(View::$globalData, EXTR_SKIP);
 
         try {
             if (!is_file($template)) {

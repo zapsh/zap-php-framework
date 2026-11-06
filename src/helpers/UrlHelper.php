@@ -2,8 +2,6 @@
 
 namespace zap\helpers;
 
-use zap\facades\Router;
-
 class UrlHelper
 {
     /** @var string Base URL of the application */

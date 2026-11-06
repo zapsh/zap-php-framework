@@ -15,7 +15,7 @@ class ZView
      * @return string|null
      * @throws Throwable
      */
-    public static function render($path, $data = [], $return = false): ?string
+    public static function render(string $path, array $data = [], bool $return = false): ?string
     {
         if (!is_file($path)) {
             throw new \Exception("ZView: Template file not found: {$path}");
