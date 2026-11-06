@@ -3,7 +3,6 @@
 vendor
 .DS_Store
 composer.lock
-.codebuddy
 
 # PHPUnit 运行产物
 /var/
