@@ -20,7 +20,14 @@ class TwigViewRenderer extends ViewRenderer
     {
         parent::__construct($view);
 
-        $this->loader = new FilesystemLoader(View::getPath());
+        // Twig FilesystemLoader 构造时会校验所有路径必须存在，
+        // 过滤掉不存在的搜索路径（如未使用 app/views 目录的项目），避免 LoaderError
+        $existingPaths = array_values(array_filter(
+            View::getPath(),
+            function (string $path): bool { return is_dir($path); }
+        ));
+
+        $this->loader = new FilesystemLoader($existingPaths ?: [base_path()]);
 
         $templatePaths = config('twig.template_paths', []);
         foreach ($templatePaths as $namespace => $templateDir) {

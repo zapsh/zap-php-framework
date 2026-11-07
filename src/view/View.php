@@ -497,9 +497,10 @@ class View
      */
     private function registerTemplatePaths(): void
     {
-        // 默认路径始终作为兜底（最低优先级，追加到末尾）
+        // 默认路径作为兜底（最低优先级，追加到末尾）；
+        // 仅在目录实际存在时注册，避免 Twig FilesystemLoader 等会校验路径的引擎抛 LoaderError
         $defaultPath = base_path('app/views');
-        if (!in_array($defaultPath, static::$templatePaths, true)) {
+        if (is_dir($defaultPath) && !in_array($defaultPath, static::$templatePaths, true)) {
             static::$templatePaths[] = $defaultPath;
         }
 
