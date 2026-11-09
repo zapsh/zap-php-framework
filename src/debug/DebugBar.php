@@ -104,7 +104,41 @@ final class DebugBar
             $level = 'notice';
         }
 
-        $this->push($level, $type, $message, $file, $line);
+        $this->push($level, $type, $message, $file, $line, $this->findOrigin());
+    }
+
+    /**
+     * 找出警告的真正来源：调用栈里第一个非 vendor / 框架文件的调用帧。
+     *
+     * PDO 等扩展内部产生的警告，上报的 file/line 只指向框架底层执行点
+     * （如 DBStatement::execute），看不出是业务代码哪一行触发的；
+     * 这里在错误发生时回溯调用栈定位业务侧调用点。
+     */
+    private function findOrigin(): array
+    {
+        // [0]=findOrigin/addError [1]=ErrorHandler::errorHandler，从 [2] 开始找
+        $frames = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 25);
+        foreach (array_slice($frames, 2) as $frame) {
+            $file = (string)($frame['file'] ?? '');
+            if ($file === '' || self::isFrameworkFile($file)) {
+                continue;
+            }
+            return [
+                'file' => $file,
+                'line' => (int)($frame['line'] ?? 0),
+                'call' => (($frame['class'] ?? '') . ($frame['type'] ?? '') . ($frame['function'] ?? '')) . '()',
+            ];
+        }
+        return [];
+    }
+
+    /**
+     * 判断是否为 vendor / 框架内部文件（与 ErrorHandler::isVendorFile 同判据）
+     */
+    private static function isFrameworkFile(string $file): bool
+    {
+        $file = str_replace('\\', '/', $file);
+        return str_contains($file, '/vendor/') || str_contains($file, '/zap-php-framework/src/');
     }
 
     /**
@@ -198,7 +232,8 @@ final class DebugBar
         string $type,
         string $message,
         string $file,
-        int $line
+        int $line,
+        array $origin = []
     ): void {
         $key = md5($level . '|' . $type . '|' . $message . '|' . $file . '|' . $line);
 
@@ -220,6 +255,7 @@ final class DebugBar
             'line'    => $line,
             'at'      => (microtime(true) - $this->startedAt) * 1000,
             'count'   => 1,
+            'origin'  => $origin,
         ];
     }
 
@@ -464,6 +500,14 @@ final class DebugBar
                 $body .= '<zap-dbg-msg-body>' . self::e($item['message']) . '</zap-dbg-msg-body>';
                 if ($item['file'] !== '') {
                     $body .= '<zap-dbg-msg-file>' . self::e($item['file'] . ':' . $item['line']) . '</zap-dbg-msg-file>';
+                }
+                // 业务侧来源帧：警告发生在 PDO 等扩展/框架内部时，
+                // 上报的 file:line 只指向底层执行点，这里补显真正的调用位置
+                $origin = $item['origin'] ?? [];
+                if (is_array($origin) && ($origin['file'] ?? '') !== ''
+                    && ($origin['file'] . ':' . ($origin['line'] ?? 0)) !== ($item['file'] . ':' . $item['line'])) {
+                    $body .= '<zap-dbg-msg-file>来源: ' . self::e((string)($origin['call'] ?? ''))
+                        . ' — ' . self::e($origin['file'] . ':' . ($origin['line'] ?? 0)) . '</zap-dbg-msg-file>';
                 }
                 $body .= '</zap-dbg-msg>';
             }
