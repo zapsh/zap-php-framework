@@ -576,7 +576,8 @@ class ErrorHandler
         $payload = [
             'error'   => true,
             'code'    => $statusCode,
-            'message' => $statusCode >= 500 ? '服务器内部错误' : $e->getMessage(),
+            // 生产环境隐藏 500 细节；debug 模式返回真实异常信息便于排查
+            'message' => ($statusCode >= 500 && !$this->isDebug()) ? '服务器内部错误' : $e->getMessage(),
         ];
 
         if ($this->isDebug()) {

@@ -465,9 +465,13 @@ class Query
                 // Support table prefix for table.column references
                 if ($this->db->getTablePrefix() && str_contains($colName, '.')) {
                     $parts = explode('.', $colName, 2);
-                    // Only prefix if it's a known real table name (not an alias)
-                    if (in_array($parts[0], $this->knownTables, true)) {
-                        $colName = $this->db->quoteTable($parts[0]) . '.' . $this->db->quoteColumn($parts[1]);
+                    $prefix = $parts[0];
+                    // 列前缀若就是主表别名（可能恰好等于原始表名），原样保留，
+                    // 否则会被加前缀成「真实表名.列」而与实际别名冲突。
+                    if ($prefix === $this->alias) {
+                        $colName = $this->db->quoteColumn($prefix) . '.' . $this->db->quoteColumn($parts[1]);
+                    } elseif (in_array($prefix, $this->knownTables, true)) {
+                        $colName = $this->db->quoteTable($prefix) . '.' . $this->db->quoteColumn($parts[1]);
                     } else {
                         $colName = $this->db->quoteColumn($colName);
                     }

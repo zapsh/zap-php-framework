@@ -137,7 +137,12 @@ class ZPDO
     public function prepare($query, $options = []): PDOStatement|false
     {
         $sql = $this->prepareSQL($query);
-        $stm = $this->connection->prepare($sql, $options);
+        try {
+            $stm = $this->connection->prepare($sql, $options);
+        } catch (\PDOException $e) {
+            // 把出错的 SQL 附进异常信息，否则调试时只能看到 SQLSTATE 无法定位语句
+            throw new \PDOException($e->getMessage() . ' | SQL: ' . $sql, (int)$e->getCode(), $e);
+        }
 
         // 绝大多数业务查询走 prepare() + execute()（Query / Model / CRUD）。
         // 开启日志时给 statement 注入回调，由 Statement::execute() 记录真实参数与耗时。
